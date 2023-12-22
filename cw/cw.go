@@ -1,6 +1,8 @@
 package cw
 
-import "fmt"
+import (
+	"fmt"
+)
 
 const defaultBufferSize = 1024 * 1024 // 1k
 
