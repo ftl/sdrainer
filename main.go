@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/jfreymuth/pulse"
@@ -16,7 +17,12 @@ func main() {
 	}
 	defer client.Close()
 
-	decoder := cw.NewDecoder(0)
+	source, err := client.DefaultSource()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	decoder := cw.NewDecoder(os.Stdout, new(clock), 700, source.SampleRate(), 0)
 	defer decoder.Close()
 
 	stream, err := client.NewRecord(pulse.Float32Writer(decoder.Write))
@@ -25,6 +31,12 @@ func main() {
 	}
 
 	stream.Start()
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 	stream.Stop()
+}
+
+type clock struct{}
+
+func (c clock) Now() time.Time {
+	return time.Now()
 }

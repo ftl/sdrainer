@@ -1,10 +1,14 @@
 package cw
 
 import (
+	"fmt"
 	"math"
+	"math/rand"
 	"testing"
 
+	"github.com/ftl/digimodes/cw"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFilter_SignalState(t *testing.T) {
@@ -93,6 +97,24 @@ func TestFilter_SignalState(t *testing.T) {
 				for i := range out {
 					out[i] = 0.8
 				}
+			},
+			blocks:   10,
+			expected: false,
+		},
+		{
+			desc:   "1 block noise",
+			filter: newFilter(pitch, sampleRate),
+			signalGen: func(out []float32) {
+				generateNoise(out, 0.1)
+			},
+			blocks:   1,
+			expected: false,
+		},
+		{
+			desc:   "10 blocks noise",
+			filter: newFilter(pitch, sampleRate),
+			signalGen: func(out []float32) {
+				generateNoise(out, 0.1)
 			},
 			blocks:   10,
 			expected: false,
@@ -187,11 +209,112 @@ func TestFilter_Sensitivity(t *testing.T) {
 	assert.Truef(t, lowestAmplitude < 0.65, "lowest amplitude is %f", lowestAmplitude)
 }
 
+func TestFilter_SNR(t *testing.T) {
+	sampleRate := 48000
+	pitch := 700.0
+	filter := newFilter(pitch, sampleRate)
+
+	var highestAmplitude float64
+	for i := 0; i <= 100; i++ {
+		amplitude := float64(i) / 100
+		const blockCount = 1
+		signal := make([]float32, blockCount*filter.blocksize)
+		generateSinewave(signal[:], 1, pitch, 0, sampleRate)
+		mixWithNoise(signal[:], amplitude)
+
+		var detected bool
+		for j := 0; j < blockCount; j++ {
+			start := j * filter.blocksize
+			end := start + filter.blocksize
+			block := filterBlock(signal[start:end])
+			detected = filter.signalState(block) || detected
+		}
+
+		if i == 0 {
+			require.True(t, detected, "not detected without noise")
+		}
+
+		if detected {
+			highestAmplitude = amplitude
+		} else {
+			break
+		}
+	}
+
+	assert.Truef(t, highestAmplitude == 1, "highest noise amplitude is %f", highestAmplitude)
+}
+
+func TestFilter_NoiseTolerance(t *testing.T) {
+	sampleRate := 48000
+	pitch := 700.0
+	filter := newFilter(pitch, sampleRate)
+
+	var highestAmplitude float64
+	for i := 0; i <= 100; i++ {
+		amplitude := float64(i) / 100
+		const blockCount = 1
+		signal := make([]float32, blockCount*filter.blocksize)
+		generateNoise(signal[:], amplitude)
+
+		var detected bool
+		for j := 0; j < blockCount; j++ {
+			start := j * filter.blocksize
+			end := start + filter.blocksize
+			block := filterBlock(signal[start:end])
+			detected = filter.signalState(block) || detected
+		}
+
+		if !detected {
+			highestAmplitude = amplitude
+		} else {
+			break
+		}
+	}
+
+	assert.Truef(t, highestAmplitude == 1, "highest noise amplitude is %f", highestAmplitude)
+}
+
+func TestToCWChar(t *testing.T) {
+	a := cwChar{cw.Dit, cw.Da}
+	assert.Equal(t, a, toCWChar(cw.Dit, cw.Da))
+}
+
+func TestDecodeTable(t *testing.T) {
+	table := generateDecodeTable()
+
+	assert.Equal(t, 'a', table[toCWChar(cw.Dit, cw.Da)])
+	assert.Equal(t, '§', table[toCWChar(cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit)])
+}
+
 func generateSinewave(out []float32, amplitude, frequency, phase float64, sampleRate int) {
 	var tick float64 = 1.0 / float64(sampleRate)
 	var t float64
 	for i := range out {
 		out[i] = float32(amplitude * math.Cos(2*math.Pi*frequency*t+phase))
 		t += tick
+	}
+}
+
+func generateNoise(out []float32, amplitude float64) {
+	for i := range out {
+		noise := rand.Float32() * float32(amplitude)
+		negative := (rand.Float32() > 0.5)
+		if negative {
+			noise *= -1
+		}
+		out[i] = noise
+	}
+}
+
+func mixWithNoise(out []float32, amplitude float64) {
+	for i := range out {
+		noise := rand.Float32() * float32(amplitude)
+		fmt.Printf("noise: %f amp: %f out: %f -> ", noise, amplitude, out[i])
+		negative := (rand.Float32() > 0.5)
+		if negative {
+			noise *= -1
+		}
+		out[i] = float32(math.Max(math.Min(1.0, float64(out[i]+noise)), -1.0))
+		fmt.Printf("%f\n", out[i])
 	}
 }
