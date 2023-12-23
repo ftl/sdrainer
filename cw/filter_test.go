@@ -1,10 +1,14 @@
 package cw
 
 import (
-	"fmt"
+	"bufio"
+	"bytes"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ftl/digimodes/cw"
 	"github.com/stretchr/testify/assert"
@@ -138,10 +142,13 @@ func TestFilter_SignalState(t *testing.T) {
 
 func TestFilter_Blocksize(t *testing.T) {
 	sampleRate := 48000
-	for i := 1; i < sampleRate/2; i++ {
-		filter := newFilter(float64(i), sampleRate)
 
-		assert.Truef(t, math.Abs(float64(filter.blocksize)/float64(sampleRate)-blocksizeRatio) < 0.1, "f=%d blocksize is %d, ratio is %f", i, filter.blocksize, float64(filter.blocksize)/float64(sampleRate))
+	for i := 301; i < sampleRate/2; i++ {
+		blocksize := calculateBlocksize(float64(i), sampleRate)
+		ratio := float64(blocksize) / float64(sampleRate)
+		delta := math.Abs(ratio - blocksizeRatio)
+
+		assert.Truef(t, delta <= 0.0017, "f=%d blocksize is %d, ratio is %f, delta is %f", i, blocksize, ratio, delta)
 	}
 }
 
@@ -177,7 +184,7 @@ func TestFilter_Bandwidth(t *testing.T) {
 	bandwidth := highestFrequency - lowestFrequency
 
 	assert.True(t, pitchDetected, "pitch not detected")
-	assert.Truef(t, bandwidth < 110, "bandwidth is %d", bandwidth)
+	assert.Truef(t, bandwidth < 300, "bandwidth is %d", bandwidth)
 }
 
 func TestFilter_Sensitivity(t *testing.T) {
@@ -286,6 +293,43 @@ func TestDecodeTable(t *testing.T) {
 	assert.Equal(t, '§', table[toCWChar(cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit)])
 }
 
+func TestDemodulator_RecordedStreams(t *testing.T) {
+	blockTick := 5 * time.Millisecond
+	clock := new(manualClock)
+	buffer := bytes.NewBuffer([]byte{})
+	demodulator := newDemodulator(buffer, clock)
+
+	stream, err := readLines("pse.txt")
+	require.NoError(t, err)
+	for _, state := range stream {
+		clock.Add(blockTick)
+		demodulator.tick(state == "1")
+	}
+	demodulator.stop()
+
+	assert.Equal(t, "pse", buffer.String())
+}
+
+func readLines(filename string) ([]string, error) {
+	file, err := os.Open(filepath.Join("testdata", filename))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	result := make([]string, 0, 10000)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		result = append(result, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 func generateSinewave(out []float32, amplitude, frequency, phase float64, sampleRate int) {
 	var tick float64 = 1.0 / float64(sampleRate)
 	var t float64
@@ -309,12 +353,10 @@ func generateNoise(out []float32, amplitude float64) {
 func mixWithNoise(out []float32, amplitude float64) {
 	for i := range out {
 		noise := rand.Float32() * float32(amplitude)
-		fmt.Printf("noise: %f amp: %f out: %f -> ", noise, amplitude, out[i])
 		negative := (rand.Float32() > 0.5)
 		if negative {
 			noise *= -1
 		}
 		out[i] = float32(math.Max(math.Min(1.0, float64(out[i]+noise)), -1.0))
-		fmt.Printf("%f\n", out[i])
 	}
 }

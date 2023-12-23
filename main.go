@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/jfreymuth/pulse"
 
@@ -25,13 +24,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	decoder := cw.NewDecoder(os.Stdout, new(clock), 700, source.SampleRate(), 0)
+	decoder := cw.NewDecoder(os.Stdout, 700, source.SampleRate(), 0)
 	defer decoder.Close()
+	decoder.SetScale(2.5) // TODO try out autoscale
 
-	stream, err := client.NewRecord(pulse.Float32Writer(decoder.Write))
+	stream, err := client.NewRecord(pulse.Float32Writer(decoder.Write), pulse.RecordBufferFragmentSize(2*uint32(decoder.Blocksize())))
 	if err != nil {
 		log.Fatal(err)
 	}
+	decoder.SetChannelCount(stream.Channels())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	signals := make(chan os.Signal, 1)
@@ -54,10 +55,4 @@ func handleCancelation(signals <-chan os.Signal, cancel context.CancelFunc, shut
 			log.Fatal("hard shutdown")
 		}
 	}
-}
-
-type clock struct{}
-
-func (c clock) Now() time.Time {
-	return time.Now()
 }

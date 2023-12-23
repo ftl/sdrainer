@@ -25,7 +25,7 @@ See also:
 
 // blocksizeRatio = blocksize / sampleRate
 // this is also the duration in seconds that should be covered by one filter block
-const blocksizeRatio = 0.01
+const blocksizeRatio = 0.005
 
 type filterBlock []float32
 
@@ -52,9 +52,7 @@ type filter struct {
 }
 
 func newFilter(pitch float64, sampleRate int) *filter {
-	minBlocksize := math.Round(float64(sampleRate) / pitch)
-	blocksize := int(math.Round((blocksizeRatio*float64(sampleRate))/minBlocksize)) * int(minBlocksize)
-
+	blocksize := calculateBlocksize(pitch, sampleRate)
 	binIndex := int(0.5 + (float64(blocksize) * pitch / float64(sampleRate)))
 	var omega float64 = 2 * math.Pi * float64(binIndex) / float64(blocksize)
 
@@ -68,6 +66,15 @@ func newFilter(pitch float64, sampleRate int) *filter {
 		magnitudeLimitLow:  float64(blocksize) / 2, // this is a guesstimation, I just saw that the magnitude values depend on the blocksize
 		magnitudeThreshold: 0.6,
 	}
+}
+
+func calculateBlocksize(pitch float64, sampleRate int) int {
+	minBlocksize := math.Round(float64(sampleRate) / pitch)
+	return int(math.Round((blocksizeRatio*float64(sampleRate))/minBlocksize)) * int(minBlocksize)
+}
+
+func (f *filter) tick() time.Duration {
+	return time.Duration((float64(f.blocksize) / float64(f.sampleRate)) * float64(time.Second))
 }
 
 func (f *filter) magnitude(block filterBlock) float64 {
@@ -108,29 +115,28 @@ func (f *filter) Detect(buf []float32) (bool, int, error) {
 }
 
 type debouncer struct {
-	clock     Clock
-	threshold time.Duration
+	threshold int
 
 	effectiveState bool
 	lastRawState   bool
-	lastTimestamp  time.Time
+	stateCount     int
 }
 
-func newDebouncer(clock Clock, threshold time.Duration) *debouncer {
+func newDebouncer(threshold int) *debouncer {
 	return &debouncer{
-		clock:     clock,
 		threshold: threshold,
 	}
 }
 
 func (d *debouncer) debounce(rawState bool) bool {
-	now := d.clock.Now()
 	if rawState != d.lastRawState {
-		d.lastTimestamp = now
+		d.stateCount = 0
+	} else {
+		d.stateCount++
 	}
 	d.lastRawState = rawState
 
-	if now.Sub(d.lastTimestamp) > d.threshold {
+	if d.stateCount > d.threshold {
 		if rawState != d.effectiveState {
 			d.effectiveState = rawState
 		}
@@ -210,6 +216,7 @@ type demodulator struct {
 	clock Clock
 
 	lastState bool
+	lastTick  time.Time
 	onStart   time.Time
 	offStart  time.Time
 	ditTime   time.Duration
@@ -225,7 +232,8 @@ func newDemodulator(out io.Writer, clock Clock) *demodulator {
 		out:         out,
 		clock:       clock,
 		offStart:    clock.Now(),
-		ditTime:     60 * time.Millisecond, // 20 WpM
+		lastTick:    clock.Now(),
+		ditTime:     30 * time.Millisecond, // 20 WpM
 		decodeTable: generateDecodeTable(),
 	}
 	result.currentChar.clear()
@@ -245,6 +253,8 @@ func generateDecodeTable() map[cwChar]rune {
 
 func (d *demodulator) tick(state bool) {
 	now := d.clock.Now()
+	// log.Printf("tick time: %v", now.Sub(d.lastTick))
+	d.lastTick = now
 
 	if state != d.lastState {
 		if state {
@@ -271,13 +281,14 @@ func (d *demodulator) tick(state bool) {
 	if d.decoding && currentDuration > upperBound {
 		d.decoding = false
 		d.decodeCurrentChar()
-		fmt.Println() // TODO REMOVE THIS
+		// fmt.Println() // TODO REMOVE THIS
 		d.writeToOutput('\n')
 	}
 }
 
 func (d *demodulator) onRisingEdge(offDuration time.Duration) {
-	// fmt.Printf("\noff for %v => ", offDuration)
+	offRatio := float64(offDuration) / float64(d.ditTime)
+	// fmt.Printf("\noff for %v (%.3f) => ", offDuration, offRatio)
 
 	lack := 1.0
 	if d.wpm > 30 {
@@ -286,40 +297,41 @@ func (d *demodulator) onRisingEdge(offDuration time.Duration) {
 	if d.wpm > 35 {
 		lack = 1.5
 	}
-	lowerBound := time.Duration(float64(d.ditTime) * 2 * lack)
-	upperBound := time.Duration(float64(d.ditTime) * 5 * lack)
+	lowerBound := 2.2 * lack
+	upperBound := 5 * lack
 
-	if offDuration > lowerBound && offDuration < upperBound {
+	if offRatio > lowerBound && offRatio < upperBound {
 		// we have a new char
 		d.decodeCurrentChar()
-		fmt.Print("|") // TODO REMOVE THIS
-	} else if offDuration >= upperBound {
+		// fmt.Print("|") // TODO REMOVE THIS
+	} else if offRatio >= upperBound {
 		// we have a word break
 		d.decodeCurrentChar()
 		d.writeToOutput(' ')
-		fmt.Print("| |") // TODO REMOVE THIS
+		// fmt.Print("| |") // TODO REMOVE THIS
 		// } else {
 		// 	fmt.Printf("%v %v %v |%v %v|\n", d.ditTime, (d.ditTime * 2), lack, lowerBound, upperBound)
 	}
 }
 
 func (d *demodulator) onFallingEdge(onDuration time.Duration) {
-	// fmt.Printf("\non for %v => ", onDuration)
+	onRatio := float64(onDuration) / float64(d.ditTime)
+	// fmt.Printf("\non for %v (%.3f) => ", onDuration, onRatio)
 
-	if onDuration < (2*d.ditTime) || d.ditTime == 0 {
+	if onRatio < 2 || d.ditTime == 0 {
 		d.ditTime = (onDuration + d.ditTime + d.ditTime) / 3
 	}
-	if onDuration > (5 * d.ditTime) {
+	if onRatio > 5 {
 		d.ditTime = onDuration + d.ditTime
 	}
 
-	if onDuration < d.ditTime*2 && onDuration > time.Duration(float64(d.ditTime)*0.6) {
+	if onRatio < 2 && onRatio > 0.6 {
 		d.appendSymbol(cw.Dit)
-		fmt.Print(".") // TODO REMOVE THIS
+		// fmt.Print(".") // TODO REMOVE THIS
 	}
-	if onDuration > d.ditTime*2 && onDuration < (d.ditTime*6) {
+	if onRatio > 2 && onRatio < 6 {
 		d.appendSymbol(cw.Da)
-		fmt.Print("_") // TODO REMOVE THIS
+		// fmt.Print("-") // TODO REMOVE THIS
 		d.wpm = (d.wpm + (1200 / (float64(d.ditTime.Milliseconds()) / 3))) / 2
 	}
 }
@@ -334,7 +346,7 @@ func (d *demodulator) appendSymbol(s cw.Symbol) {
 
 func (d *demodulator) decodeCurrentChar() {
 	if d.currentChar.empty() {
-		fmt.Print("X") // TODO REMOVE THIS
+		// fmt.Print("X") // TODO REMOVE THIS
 		return
 	}
 
@@ -344,11 +356,15 @@ func (d *demodulator) decodeCurrentChar() {
 		if err != nil {
 			log.Printf("cannot write decoded char %q to output: %v", string(r), err)
 		} else {
-			fmt.Print(string(r)) // TODO REMOVE THIS
+			// fmt.Print(string(r)) // TODO REMOVE THIS
 		}
 	} else {
 		// TODO make this transparent to the user
-		log.Printf("unknown char %s", d.currentChar.String())
+		// log.Printf("unknown char %s", d.currentChar.String())
+		err := d.writeToOutput('X')
+		if err != nil {
+			log.Printf("cannot write unknown marker to output: %v", err)
+		}
 		// fmt.Print("?") // TODO REMOVE THIS
 	}
 	d.currentChar.clear()

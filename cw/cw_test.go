@@ -66,15 +66,3 @@ func TestDemodulator(t *testing.T) {
 	demodulator.stop()
 	assert.Equal(t, text, buffer.String())
 }
-
-type manualClock struct {
-	now time.Time
-}
-
-func (c *manualClock) Now() time.Time {
-	return c.now
-}
-
-func (c *manualClock) Add(d time.Duration) {
-	c.now = c.now.Add(d)
-}

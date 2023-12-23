@@ -2,6 +2,8 @@ package cw
 
 import (
 	"io"
+	"log"
+	"os"
 	"time"
 )
 
@@ -11,24 +13,35 @@ type Clock interface {
 }
 
 type Decoder struct {
-	filter      *filter
-	demodulator *demodulator
+	clock        *manualClock
+	filter       *filter
+	debouncer    *debouncer
+	demodulator  *demodulator
+	scale        float32
+	channelCount int
 
 	in     chan float32
+	op     chan func()
 	close  chan struct{}
 	closed chan struct{}
 }
 
-func NewDecoder(out io.Writer, clock Clock, pitch float64, sampleRate int, bufferSize int) *Decoder {
+func NewDecoder(out io.Writer, pitch float64, sampleRate int, bufferSize int) *Decoder {
 	if bufferSize == 0 {
 		bufferSize = defaultBufferSize
 	}
+	clock := &manualClock{now: time.Now()}
 	result := &Decoder{
-		filter:      newFilter(pitch, sampleRate),
-		demodulator: newDemodulator(out, clock),
-		in:          make(chan float32, bufferSize),
-		close:       make(chan struct{}),
-		closed:      make(chan struct{}),
+		clock:        clock,
+		filter:       newFilter(pitch, sampleRate),
+		debouncer:    newDebouncer(3),
+		demodulator:  newDemodulator(out, clock),
+		scale:        1,
+		channelCount: 1,
+		in:           make(chan float32, bufferSize),
+		op:           make(chan func()),
+		close:        make(chan struct{}),
+		closed:       make(chan struct{}),
 	}
 
 	go result.run()
@@ -46,57 +59,130 @@ func (d *Decoder) Close() {
 	}
 }
 
+func (d *Decoder) SetScale(scale float64) {
+	d.do(func() {
+		d.scale = float32(scale)
+	})
+}
+
+func (d *Decoder) SetChannelCount(channelCount int) {
+	d.do(func() {
+		d.channelCount = channelCount
+	})
+}
+
+func (d *Decoder) Blocksize() int {
+	return d.filter.blocksize
+}
+
 func (d *Decoder) Write(buf []float32) (int, error) {
 	n := 0
-	for _, sample := range buf {
-		d.in <- sample
+	for i, sample := range buf {
+		if i%d.channelCount == 0 {
+			d.in <- sample
+		}
 		n++
 	}
 	return n, nil
 }
 
+func (d *Decoder) do(f func()) {
+	select {
+	case <-d.closed:
+		return
+	default:
+		d.op <- f
+	}
+}
+
 func (d *Decoder) run() {
 	defer close(d.closed)
 	block := make(filterBlock, 0, d.filter.blocksize)
-	lastScale := float32(1.0)
-	_ = lastScale
+	tick := d.filter.tick()
+
+	f, err := os.Create("stream.csv")
+	if err != nil {
+		log.Printf("cannot open stream file: %v", err)
+		return
+	}
+	defer f.Close()
+
 	for {
 		select {
+		case op := <-d.op:
+			op()
 		case sample := <-d.in:
+			sample = truncate(sample * d.scale)
+
+			// _, err := fmt.Fprintf(f, "%f\n", sample)
+			// if err != nil {
+			// 	log.Printf("cannot write stream file: %v", err)
+			// }
+
 			block = append(block, sample)
 			if len(block) < d.filter.blocksize {
 				continue
 			}
-			// max := filterBlock(block).max()
-			// if max == 0 {
-			// 	max = 0.1
+
+			// for _, smpl := range block {
+			// 	_, err := fmt.Fprintf(f, "%f\n", smpl)
+			// 	if err != nil {
+			// 		log.Printf("cannot write stream file: %v", err)
+			// 	}
 			// }
-			// scale := ((1.0/max)/2 + lastScale + lastScale) / 3
-			// lastScale = scale
-			// fmt.Println(scale, max, scale*max)
-			// for i := range block {
-			// 	block[i] *= scale
-			// }
+
+			d.clock.Add(tick)
 
 			state := d.filter.signalState(block)
 			magnitude := d.filter.normalizedMagnitude(block)
 			_ = magnitude
-			// fmt.Println(state, magnitude)
-			// state, n, err := d.filter.Detect(block)
-			// if err != nil {
-			// 	log.Printf("unable to detect signal: %v", err)
-			// 	continue
-			// }
-			// if n != d.filter.blocksize {
-			// 	log.Printf("filter not using the blocksize: %d != %d", n, d.filter.blocksize)
-			// 	continue
-			// }
+
+			stateInt := 0
+			_ = stateInt
+			if state {
+				stateInt = 1
+			}
+
 			block = block[:0]
 
-			d.demodulator.tick(state)
+			debounced := d.debouncer.debounce(state)
+			_ = debounced
+			debouncedInt := 0
+			_ = debouncedInt
+			if debounced {
+				debouncedInt = 1
+			}
+			// _, err := fmt.Fprintf(f, "%f;%d;%d\n", magnitude, stateInt, debouncedInt)
+			// if err != nil {
+			// 	log.Printf("cannot write stream file: %v", err)
+			// }
+
+			d.demodulator.tick(debounced)
 		case <-d.close:
 			d.demodulator.stop()
 			return
 		}
 	}
+}
+
+func truncate(value float32) float32 {
+	if value > 1 {
+		return 1
+	} else if value < -1 {
+		return -1
+	} else {
+		return value
+	}
+}
+
+type manualClock struct {
+	now time.Time
+}
+
+func (c *manualClock) Now() time.Time {
+	return c.now
+}
+
+func (c *manualClock) Add(d time.Duration) {
+	c.now = c.now.Add(d)
 }
