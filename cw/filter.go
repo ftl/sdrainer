@@ -23,9 +23,13 @@ See also:
 
 */
 
-// blocksizeRatio = blocksize / sampleRate
-// this is also the duration in seconds that should be covered by one filter block
-const blocksizeRatio = 0.005
+const (
+	// blocksizeRatio = blocksize / sampleRate
+	// this is also the duration in seconds that should be covered by one filter block
+	defaultBlocksizeRatio     = 0.005
+	defaultMagnitudeThreshold = 0.75
+	defaultWPM                = 20
+)
 
 type filterBlock []float32
 
@@ -52,7 +56,7 @@ type filter struct {
 }
 
 func newFilter(pitch float64, sampleRate int) *filter {
-	blocksize := calculateBlocksize(pitch, sampleRate)
+	blocksize := calculateBlocksize(pitch, sampleRate, defaultBlocksizeRatio)
 	binIndex := int(0.5 + (float64(blocksize) * pitch / float64(sampleRate)))
 	var omega float64 = 2 * math.Pi * float64(binIndex) / float64(blocksize)
 
@@ -64,11 +68,11 @@ func newFilter(pitch float64, sampleRate int) *filter {
 		coeff:     2 * math.Cos(omega),
 
 		magnitudeLimitLow:  float64(blocksize) / 2, // this is a guesstimation, I just saw that the magnitude values depend on the blocksize
-		magnitudeThreshold: 0.6,
+		magnitudeThreshold: defaultMagnitudeThreshold,
 	}
 }
 
-func calculateBlocksize(pitch float64, sampleRate int) int {
+func calculateBlocksize(pitch float64, sampleRate int, blocksizeRatio float64) int {
 	minBlocksize := math.Round(float64(sampleRate) / pitch)
 	return int(math.Round((blocksizeRatio*float64(sampleRate))/minBlocksize)) * int(minBlocksize)
 }
@@ -216,12 +220,13 @@ type demodulator struct {
 	clock Clock
 
 	lastState bool
-	lastTick  time.Time
 	onStart   time.Time
 	offStart  time.Time
 	ditTime   time.Duration
 	wpm       float64
 	decoding  bool
+
+	abortDecodeAfterDits int
 
 	currentChar cwChar
 	decodeTable map[cwChar]rune
@@ -229,12 +234,13 @@ type demodulator struct {
 
 func newDemodulator(out io.Writer, clock Clock) *demodulator {
 	result := &demodulator{
-		out:         out,
-		clock:       clock,
-		offStart:    clock.Now(),
-		lastTick:    clock.Now(),
-		ditTime:     30 * time.Millisecond, // 20 WpM
-		decodeTable: generateDecodeTable(),
+		out:                  out,
+		clock:                clock,
+		offStart:             clock.Now(),
+		ditTime:              cw.WPMToDit(defaultWPM),
+		wpm:                  defaultWPM,
+		abortDecodeAfterDits: 10,
+		decodeTable:          generateDecodeTable(),
 	}
 	result.currentChar.clear()
 
@@ -251,10 +257,13 @@ func generateDecodeTable() map[cwChar]rune {
 	return result
 }
 
+func (d *demodulator) reset() {
+	d.ditTime = cw.WPMToDit(defaultWPM)
+	d.wpm = defaultWPM
+}
+
 func (d *demodulator) tick(state bool) {
 	now := d.clock.Now()
-	// log.Printf("tick time: %v", now.Sub(d.lastTick))
-	d.lastTick = now
 
 	if state != d.lastState {
 		if state {
@@ -276,13 +285,12 @@ func (d *demodulator) tick(state bool) {
 	} else {
 		currentDuration = now.Sub(d.offStart)
 	}
-	upperBound := time.Duration(float64(d.ditTime) * 10)
+	upperBound := d.ditTime * time.Duration(d.abortDecodeAfterDits)
 
 	if d.decoding && currentDuration > upperBound {
 		d.decoding = false
 		d.decodeCurrentChar()
 		// fmt.Println() // TODO REMOVE THIS
-		d.writeToOutput('\n')
 	}
 }
 
@@ -297,7 +305,7 @@ func (d *demodulator) onRisingEdge(offDuration time.Duration) {
 	if d.wpm > 35 {
 		lack = 1.5
 	}
-	lowerBound := 2.2 * lack
+	lowerBound := 2 * lack
 	upperBound := 5 * lack
 
 	if offRatio > lowerBound && offRatio < upperBound {
@@ -311,6 +319,7 @@ func (d *demodulator) onRisingEdge(offDuration time.Duration) {
 		// fmt.Print("| |") // TODO REMOVE THIS
 		// } else {
 		// 	fmt.Printf("%v %v %v |%v %v|\n", d.ditTime, (d.ditTime * 2), lack, lowerBound, upperBound)
+		// }
 	}
 }
 
@@ -329,11 +338,15 @@ func (d *demodulator) onFallingEdge(onDuration time.Duration) {
 		d.appendSymbol(cw.Dit)
 		// fmt.Print(".") // TODO REMOVE THIS
 	}
-	if onRatio > 2 && onRatio < 6 {
+	if onRatio >= 2 && onRatio < 6 {
 		d.appendSymbol(cw.Da)
 		// fmt.Print("-") // TODO REMOVE THIS
-		d.wpm = (d.wpm + (1200 / (float64(d.ditTime.Milliseconds()) / 3))) / 2
+		d.wpm = (d.wpm + ditToWPM(d.ditTime)) / 2.0
 	}
+}
+
+func ditToWPM(dit time.Duration) float64 {
+	return 60.0 / (50.0 * float64(dit.Seconds()))
 }
 
 func (d *demodulator) appendSymbol(s cw.Symbol) {

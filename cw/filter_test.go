@@ -144,9 +144,9 @@ func TestFilter_Blocksize(t *testing.T) {
 	sampleRate := 48000
 
 	for i := 301; i < sampleRate/2; i++ {
-		blocksize := calculateBlocksize(float64(i), sampleRate)
+		blocksize := calculateBlocksize(float64(i), sampleRate, defaultBlocksizeRatio)
 		ratio := float64(blocksize) / float64(sampleRate)
-		delta := math.Abs(ratio - blocksizeRatio)
+		delta := math.Abs(ratio - defaultBlocksizeRatio)
 
 		assert.Truef(t, delta <= 0.0017, "f=%d blocksize is %d, ratio is %f, delta is %f", i, blocksize, ratio, delta)
 	}
@@ -213,7 +213,7 @@ func TestFilter_Sensitivity(t *testing.T) {
 		}
 	}
 
-	assert.Truef(t, lowestAmplitude < 0.65, "lowest amplitude is %f", lowestAmplitude)
+	assert.Truef(t, lowestAmplitude <= defaultMagnitudeThreshold, "lowest amplitude is %f", lowestAmplitude)
 }
 
 func TestFilter_SNR(t *testing.T) {
@@ -308,6 +308,10 @@ func TestDemodulator_RecordedStreams(t *testing.T) {
 	demodulator.stop()
 
 	assert.Equal(t, "pse", buffer.String())
+}
+
+func TestDitToWPM(t *testing.T) {
+	assert.Equal(t, 20.0, ditToWPM(60*time.Millisecond))
 }
 
 func readLines(filename string) ([]string, error) {
