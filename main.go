@@ -26,7 +26,7 @@ func main() {
 
 	decoder := cw.NewDecoder(os.Stdout, 700, source.SampleRate(), 0)
 	defer decoder.Close()
-	decoder.SetScale(2.5) // TODO try out autoscale
+	decoder.SetScale(0) // TODO 0 == autoscale
 
 	stream, err := client.NewRecord(pulse.Float32Writer(decoder.Write), pulse.RecordBufferFragmentSize(2*uint32(decoder.Blocksize())))
 	if err != nil {

@@ -3,11 +3,16 @@ package cw
 import (
 	"io"
 	"log"
+	"math"
 	"os"
 	"time"
 )
 
-const defaultBufferSize = 1024 * 1024 // 1k
+const (
+	defaultBufferSize = 1024 * 1024 // 1k
+	defaultMaxScale   = 12
+)
+
 type Clock interface {
 	Now() time.Time
 }
@@ -17,6 +22,7 @@ type Decoder struct {
 	filter       *filter
 	debouncer    *debouncer
 	demodulator  *demodulator
+	maxScale     float64
 	scale        float32
 	channelCount int
 
@@ -36,6 +42,7 @@ func NewDecoder(out io.Writer, pitch float64, sampleRate int, bufferSize int) *D
 		filter:       newFilter(pitch, sampleRate),
 		debouncer:    newDebouncer(3),
 		demodulator:  newDemodulator(out, clock),
+		maxScale:     defaultMaxScale,
 		scale:        1,
 		channelCount: 1,
 		in:           make(chan float32, bufferSize),
@@ -59,6 +66,12 @@ func (d *Decoder) Close() {
 	}
 }
 
+func (d *Decoder) SetMaxScale(scale float64) {
+	d.do(func() {
+		d.maxScale = scale
+	})
+}
+
 func (d *Decoder) SetScale(scale float64) {
 	d.do(func() {
 		d.scale = float32(scale)
@@ -78,7 +91,7 @@ func (d *Decoder) Blocksize() int {
 func (d *Decoder) Write(buf []float32) (int, error) {
 	n := 0
 	for i, sample := range buf {
-		if i%d.channelCount == 0 {
+		if (i % d.channelCount) == 0 {
 			d.in <- sample
 		}
 		n++
@@ -112,8 +125,6 @@ func (d *Decoder) run() {
 		case op := <-d.op:
 			op()
 		case sample := <-d.in:
-			sample = truncate(sample * d.scale)
-
 			// _, err := fmt.Fprintf(f, "%f\n", sample)
 			// if err != nil {
 			// 	log.Printf("cannot write stream file: %v", err)
@@ -122,6 +133,17 @@ func (d *Decoder) run() {
 			block = append(block, sample)
 			if len(block) < d.filter.blocksize {
 				continue
+			}
+
+			scale := d.scale
+			if scale == 0 {
+				max := block.max()
+				scale = float32(math.Min(1/float64(max), d.maxScale))
+			}
+			if scale != 1 {
+				for i := range block {
+					block[i] = truncate(block[i] * scale)
+				}
 			}
 
 			// for _, smpl := range block {
