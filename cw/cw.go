@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	defaultBufferSize = 1024 * 1024 // 1k
-	defaultMaxScale   = 12
+	defaultBufferSize        = 1024 * 1024 // 1k
+	defaultDebounceThreshold = 3
+	defaultMaxScale          = 12
 )
 
 type Clock interface {
@@ -40,7 +41,7 @@ func NewDecoder(out io.Writer, pitch float64, sampleRate int, bufferSize int) *D
 	result := &Decoder{
 		clock:        clock,
 		filter:       newFilter(pitch, sampleRate),
-		debouncer:    newDebouncer(3),
+		debouncer:    newDebouncer(defaultDebounceThreshold),
 		demodulator:  newDemodulator(out, clock),
 		maxScale:     defaultMaxScale,
 		scale:        1,
@@ -81,6 +82,12 @@ func (d *Decoder) SetScale(scale float64) {
 func (d *Decoder) SetChannelCount(channelCount int) {
 	d.do(func() {
 		d.channelCount = channelCount
+	})
+}
+
+func (d *Decoder) SetDebounceThreshold(threshold int) {
+	d.do(func() {
+		d.debouncer.threshold = threshold
 	})
 }
 

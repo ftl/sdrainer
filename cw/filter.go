@@ -133,6 +133,10 @@ func newDebouncer(threshold int) *debouncer {
 }
 
 func (d *debouncer) debounce(rawState bool) bool {
+	if d.threshold < 2 {
+		return rawState
+	}
+
 	if rawState != d.lastRawState {
 		d.stateCount = 0
 	} else {
