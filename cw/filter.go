@@ -55,8 +55,12 @@ type filter struct {
 	magnitudeThreshold float64
 }
 
-func newFilter(pitch float64, sampleRate int) *filter {
-	blocksize := calculateBlocksize(pitch, sampleRate, defaultBlocksizeRatio)
+func newDefaultFilter(pitch float64, sampleRate int) *filter {
+	return newFilter(pitch, sampleRate, defaultBlocksizeRatio)
+}
+
+func newFilter(pitch float64, sampleRate int, blocksizeRatio float64) *filter {
+	blocksize := calculateBlocksize(pitch, sampleRate, blocksizeRatio)
 	binIndex := int(0.5 + (float64(blocksize) * pitch / float64(sampleRate)))
 	var omega float64 = 2 * math.Pi * float64(binIndex) / float64(blocksize)
 
@@ -264,6 +268,11 @@ func generateDecodeTable() map[cwChar]rune {
 func (d *demodulator) reset() {
 	d.ditTime = cw.WPMToDit(defaultWPM)
 	d.wpm = defaultWPM
+}
+
+func (d *demodulator) presetWPM(wpm int) {
+	d.wpm = float64(wpm)
+	d.ditTime = cw.WPMToDit(wpm)
 }
 
 func (d *demodulator) tick(state bool) {

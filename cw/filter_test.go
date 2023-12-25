@@ -27,7 +27,7 @@ func TestFilter_SignalState(t *testing.T) {
 	}{
 		{
 			desc:   "1 block sinewave on pitch",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				generateSinewave(out, 1, pitch, 0, sampleRate)
 			},
@@ -36,7 +36,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "10 blocks sinewave on pitch",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				generateSinewave(out, 1, pitch, 0, sampleRate)
 			},
@@ -45,7 +45,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "1 block sinewave half pitch",
-			filter: newFilter(pitch/2, sampleRate),
+			filter: newDefaultFilter(pitch/2, sampleRate),
 			signalGen: func(out []float32) {
 				generateSinewave(out, 1, pitch, 0, sampleRate)
 			},
@@ -54,7 +54,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "10 blocks sinewave half pitch",
-			filter: newFilter(pitch/2, sampleRate),
+			filter: newDefaultFilter(pitch/2, sampleRate),
 			signalGen: func(out []float32) {
 				generateSinewave(out, 1, pitch, 0, sampleRate)
 			},
@@ -63,7 +63,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "1 block silence",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				for i := range out {
 					out[i] = 0
@@ -74,7 +74,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "10 blocks silence",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				for i := range out {
 					out[i] = 0
@@ -85,7 +85,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "1 block dc",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				for i := range out {
 					out[i] = 0.8
@@ -96,7 +96,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "10 blocks dc",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				for i := range out {
 					out[i] = 0.8
@@ -107,7 +107,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "1 block noise",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				generateNoise(out, 0.1)
 			},
@@ -116,7 +116,7 @@ func TestFilter_SignalState(t *testing.T) {
 		},
 		{
 			desc:   "10 blocks noise",
-			filter: newFilter(pitch, sampleRate),
+			filter: newDefaultFilter(pitch, sampleRate),
 			signalGen: func(out []float32) {
 				generateNoise(out, 0.1)
 			},
@@ -155,7 +155,7 @@ func TestFilter_Blocksize(t *testing.T) {
 func TestFilter_Bandwidth(t *testing.T) {
 	sampleRate := 48000
 	pitch := 700.0
-	filter := newFilter(pitch, sampleRate)
+	filter := newDefaultFilter(pitch, sampleRate)
 
 	lowestFrequency := 0
 	highestFrequency := 0
@@ -190,7 +190,7 @@ func TestFilter_Bandwidth(t *testing.T) {
 func TestFilter_Sensitivity(t *testing.T) {
 	sampleRate := 48000
 	pitch := 700.0
-	filter := newFilter(pitch, sampleRate)
+	filter := newDefaultFilter(pitch, sampleRate)
 
 	var lowestAmplitude float64
 	for i := 0; i <= 100; i++ {
@@ -219,7 +219,7 @@ func TestFilter_Sensitivity(t *testing.T) {
 func TestFilter_SNR(t *testing.T) {
 	sampleRate := 48000
 	pitch := 700.0
-	filter := newFilter(pitch, sampleRate)
+	filter := newDefaultFilter(pitch, sampleRate)
 
 	var highestAmplitude float64
 	for i := 0; i <= 100; i++ {
@@ -254,7 +254,7 @@ func TestFilter_SNR(t *testing.T) {
 func TestFilter_NoiseTolerance(t *testing.T) {
 	sampleRate := 48000
 	pitch := 700.0
-	filter := newFilter(pitch, sampleRate)
+	filter := newDefaultFilter(pitch, sampleRate)
 
 	var highestAmplitude float64
 	for i := 0; i <= 100; i++ {

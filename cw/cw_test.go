@@ -24,7 +24,7 @@ func TestDemodulator(t *testing.T) {
 	defer modulator.Close()
 	oscillator.Modulator = modulator
 
-	filter := newFilter(pitch, sampleRate)
+	filter := newDefaultFilter(pitch, sampleRate)
 	require.True(t, filter.blocksize > 0)
 
 	blockTick := time.Duration(float64(filter.blocksize) / float64(sampleRate) * float64(time.Second))

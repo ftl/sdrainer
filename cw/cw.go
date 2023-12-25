@@ -40,7 +40,7 @@ func NewDecoder(out io.Writer, pitch float64, sampleRate int, bufferSize int) *D
 	clock := &manualClock{now: time.Now()}
 	result := &Decoder{
 		clock:        clock,
-		filter:       newFilter(pitch, sampleRate),
+		filter:       newDefaultFilter(pitch, sampleRate),
 		debouncer:    newDebouncer(defaultDebounceThreshold),
 		demodulator:  newDemodulator(out, clock),
 		maxScale:     defaultMaxScale,
@@ -73,6 +73,14 @@ func (d *Decoder) SetMaxScale(scale float64) {
 	})
 }
 
+func (d *Decoder) MaxScale() float64 {
+	var result float64
+	d.do(func() {
+		result = d.maxScale
+	})
+	return result
+}
+
 func (d *Decoder) SetScale(scale float64) {
 	d.do(func() {
 		d.scale = float32(scale)
@@ -89,6 +97,42 @@ func (d *Decoder) SetDebounceThreshold(threshold int) {
 	d.do(func() {
 		d.debouncer.threshold = threshold
 	})
+}
+
+func (d *Decoder) DebounceThreshold() int {
+	var result int
+	d.do(func() {
+		result = d.debouncer.threshold
+	})
+	return result
+}
+
+func (d *Decoder) PresetWPM(wpm int) {
+	d.do(func() {
+		d.demodulator.presetWPM(wpm)
+	})
+}
+
+func (d *Decoder) WPM() int {
+	var result int
+	d.do(func() {
+		result = int(math.Round(d.demodulator.wpm))
+	})
+	return result
+}
+
+func (d *Decoder) SetMagnitudeThreshold(threshold float64) {
+	d.do(func() {
+		d.filter.magnitudeThreshold = threshold
+	})
+}
+
+func (d *Decoder) MagnitudeThreshold() float64 {
+	var result float64
+	d.do(func() {
+		result = d.filter.magnitudeThreshold
+	})
+	return result
 }
 
 func (d *Decoder) Blocksize() int {
