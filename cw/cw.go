@@ -4,7 +4,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"os"
 	"time"
 
 	"github.com/ftl/sdrainer/dsp"
@@ -167,12 +166,12 @@ func (d *Decoder) run() {
 	tick := d.filter.Tick()
 	block := make(dsp.FilterBlock, 0)
 
-	f, err := os.Create("stream.csv")
-	if err != nil {
-		log.Printf("cannot open stream file: %v", err)
-		return
-	}
-	defer f.Close()
+	// f, err := os.Create("stream.csv")
+	// if err != nil {
+	// 	log.Printf("cannot open stream file: %v", err)
+	// 	return
+	// }
+	// defer f.Close()
 
 	for {
 		select {
