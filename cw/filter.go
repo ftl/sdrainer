@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"time"
 
 	"github.com/ftl/digimodes/cw"
@@ -24,139 +23,9 @@ See also:
 */
 
 const (
-	// blocksizeRatio = blocksize / sampleRate
-	// this is also the duration in seconds that should be covered by one filter block
-	defaultBlocksizeRatio     = 0.005
-	defaultMagnitudeThreshold = 0.75
-	defaultWPM                = 20
+	defaultWPM     = 20
+	maxSymbolCount = 8
 )
-
-type filterBlock []float32
-
-func (b filterBlock) max() float32 {
-	var max float32
-	for _, s := range b {
-		if s > max {
-			max = s
-		}
-	}
-	return max
-}
-
-type filter struct {
-	pitch      float64
-	sampleRate int
-
-	blocksize int
-	coeff     float64
-
-	magnitudeLimitLow  float64
-	magnitudeLimit     float64
-	magnitudeThreshold float64
-}
-
-func newDefaultFilter(pitch float64, sampleRate int) *filter {
-	return newFilter(pitch, sampleRate, defaultBlocksizeRatio)
-}
-
-func newFilter(pitch float64, sampleRate int, blocksizeRatio float64) *filter {
-	blocksize := calculateBlocksize(pitch, sampleRate, blocksizeRatio)
-	binIndex := int(0.5 + (float64(blocksize) * pitch / float64(sampleRate)))
-	var omega float64 = 2 * math.Pi * float64(binIndex) / float64(blocksize)
-
-	return &filter{
-		pitch:      pitch,
-		sampleRate: sampleRate,
-
-		blocksize: blocksize,
-		coeff:     2 * math.Cos(omega),
-
-		magnitudeLimitLow:  float64(blocksize) / 2, // this is a guesstimation, I just saw that the magnitude values depend on the blocksize
-		magnitudeThreshold: defaultMagnitudeThreshold,
-	}
-}
-
-func calculateBlocksize(pitch float64, sampleRate int, blocksizeRatio float64) int {
-	minBlocksize := math.Round(float64(sampleRate) / pitch)
-	return int(math.Round((blocksizeRatio*float64(sampleRate))/minBlocksize)) * int(minBlocksize)
-}
-
-func (f *filter) tick() time.Duration {
-	return time.Duration((float64(f.blocksize) / float64(f.sampleRate)) * float64(time.Second))
-}
-
-func (f *filter) magnitude(block filterBlock) float64 {
-	var q0, q1, q2 float64
-	for _, sample := range block {
-		q0 = f.coeff*q1 - q2 + float64(sample)
-		q2 = q1
-		q1 = q0
-	}
-	return math.Sqrt((q1 * q1) + (q2 * q2) - q1*q2*f.coeff)
-}
-
-func (f *filter) normalizedMagnitude(block filterBlock) float64 {
-	magnitude := f.magnitude(block)
-
-	// moving average filter
-	if magnitude > f.magnitudeLimitLow {
-		f.magnitudeLimit = (f.magnitudeLimit + ((magnitude - f.magnitudeLimit) / 6))
-	}
-	if f.magnitudeLimit < f.magnitudeLimitLow {
-		f.magnitudeLimit = f.magnitudeLimitLow
-	}
-
-	return magnitude / f.magnitudeLimit
-}
-
-func (f *filter) signalState(block filterBlock) bool {
-	return f.normalizedMagnitude(block) > f.magnitudeThreshold
-}
-
-func (f *filter) Detect(buf []float32) (bool, int, error) {
-	if len(buf) < f.blocksize {
-		return false, 0, fmt.Errorf("buffer must contain at least %d samples", f.blocksize)
-	}
-
-	result := f.signalState(buf[:f.blocksize])
-	return result, f.blocksize, nil
-}
-
-type debouncer struct {
-	threshold int
-
-	effectiveState bool
-	lastRawState   bool
-	stateCount     int
-}
-
-func newDebouncer(threshold int) *debouncer {
-	return &debouncer{
-		threshold: threshold,
-	}
-}
-
-func (d *debouncer) debounce(rawState bool) bool {
-	if d.threshold < 2 {
-		return rawState
-	}
-
-	if rawState != d.lastRawState {
-		d.stateCount = 0
-	} else {
-		d.stateCount++
-	}
-	d.lastRawState = rawState
-
-	if d.stateCount > d.threshold {
-		if rawState != d.effectiveState {
-			d.effectiveState = rawState
-		}
-	}
-	return d.effectiveState
-}
-
-const maxSymbolCount = 8
 
 var noSymbol = cw.Symbol{}
 

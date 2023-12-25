@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"time"
+
+	"github.com/ftl/sdrainer/dsp"
 )
 
 const (
@@ -20,8 +22,8 @@ type Clock interface {
 
 type Decoder struct {
 	clock        *manualClock
-	filter       *filter
-	debouncer    *debouncer
+	filter       *dsp.Goertzel
+	debouncer    *dsp.BoolDebouncer
 	demodulator  *demodulator
 	maxScale     float64
 	scale        float32
@@ -40,8 +42,8 @@ func NewDecoder(out io.Writer, pitch float64, sampleRate int, bufferSize int) *D
 	clock := &manualClock{now: time.Now()}
 	result := &Decoder{
 		clock:        clock,
-		filter:       newDefaultFilter(pitch, sampleRate),
-		debouncer:    newDebouncer(defaultDebounceThreshold),
+		filter:       dsp.NewDefaultGoertzel(pitch, sampleRate),
+		debouncer:    dsp.NewBoolDebouncer(defaultDebounceThreshold),
 		demodulator:  newDemodulator(out, clock),
 		maxScale:     defaultMaxScale,
 		scale:        1,
@@ -95,14 +97,14 @@ func (d *Decoder) SetChannelCount(channelCount int) {
 
 func (d *Decoder) SetDebounceThreshold(threshold int) {
 	d.do(func() {
-		d.debouncer.threshold = threshold
+		d.debouncer.SetThreshold(threshold)
 	})
 }
 
 func (d *Decoder) DebounceThreshold() int {
 	var result int
 	d.do(func() {
-		result = d.debouncer.threshold
+		result = d.debouncer.Threshold()
 	})
 	return result
 }
@@ -123,20 +125,20 @@ func (d *Decoder) WPM() int {
 
 func (d *Decoder) SetMagnitudeThreshold(threshold float64) {
 	d.do(func() {
-		d.filter.magnitudeThreshold = threshold
+		d.filter.SetMagnitudeThreshold(threshold)
 	})
 }
 
 func (d *Decoder) MagnitudeThreshold() float64 {
 	var result float64
 	d.do(func() {
-		result = d.filter.magnitudeThreshold
+		result = d.filter.MagnitudeThreshold()
 	})
 	return result
 }
 
 func (d *Decoder) Blocksize() int {
-	return d.filter.blocksize
+	return d.filter.Blocksize()
 }
 
 func (d *Decoder) Write(buf []float32) (int, error) {
@@ -161,8 +163,9 @@ func (d *Decoder) do(f func()) {
 
 func (d *Decoder) run() {
 	defer close(d.closed)
-	block := make(filterBlock, 0, d.filter.blocksize)
-	tick := d.filter.tick()
+	blocksize := d.filter.Blocksize()
+	tick := d.filter.Tick()
+	block := make(dsp.FilterBlock, 0)
 
 	f, err := os.Create("stream.csv")
 	if err != nil {
@@ -182,13 +185,13 @@ func (d *Decoder) run() {
 			// }
 
 			block = append(block, sample)
-			if len(block) < d.filter.blocksize {
+			if len(block) < blocksize {
 				continue
 			}
 
 			scale := d.scale
 			if scale == 0 {
-				max := block.max()
+				max := block.Max()
 				scale = float32(math.Min(1/float64(max), d.maxScale))
 			}
 			if scale != 1 {
@@ -206,8 +209,11 @@ func (d *Decoder) run() {
 
 			d.clock.Add(tick)
 
-			state := d.filter.signalState(block)
-			magnitude := d.filter.normalizedMagnitude(block)
+			magnitude, state, _, err := d.filter.Detect(block)
+			if err != nil {
+				log.Printf("cannot detect signal: %v", err)
+				continue
+			}
 			_ = magnitude
 
 			stateInt := 0
@@ -218,7 +224,7 @@ func (d *Decoder) run() {
 
 			block = block[:0]
 
-			debounced := d.debouncer.debounce(state)
+			debounced := d.debouncer.Debounce(state)
 			_ = debounced
 			debouncedInt := 0
 			_ = debouncedInt
