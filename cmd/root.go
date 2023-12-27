@@ -10,9 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	version string = "develop"
-	build   string = "-"
+var (
+	version   string = "develop"
+	gitCommit string = "-"
+	buildTime string = "-"
 )
 
 var rootFlags = struct {
