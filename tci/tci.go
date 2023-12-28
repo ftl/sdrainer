@@ -2,7 +2,6 @@ package tci
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -22,8 +21,9 @@ type Process struct {
 	listener *tciListener
 	trx      []*trxHandler
 
-	close  chan struct{}
-	closed chan struct{}
+	opAsync chan func()
+	close   chan struct{}
+	closed  chan struct{}
 }
 
 func New(host string, trace bool) (*Process, error) {
@@ -38,15 +38,17 @@ func New(host string, trace bool) (*Process, error) {
 	client := tci.KeepOpen(tcpHost, timeout, trace)
 
 	result := &Process{
-		client: client,
-		close:  make(chan struct{}),
-		closed: make(chan struct{}),
+		client:  client,
+		opAsync: make(chan func(), 10),
+		close:   make(chan struct{}),
+		closed:  make(chan struct{}),
 	}
 	result.listener = &tciListener{process: result}
 	result.trx = []*trxHandler{
 		newTRXHandler(result, 0),
 		newTRXHandler(result, 1),
 	}
+	result.trx[1].Close() // TODO add full support for the second TRX
 	go result.run()
 
 	client.Notify(result.listener)
@@ -67,14 +69,21 @@ func (p *Process) Close() {
 func (p *Process) run() {
 	for {
 		select {
+		case op := <-p.opAsync:
+			op()
 		case <-p.close:
 			p.client.StopIQ(0)
+
 			p.trx[0].Close()
-			p.trx[1].Close()
+			// p.trx[1].Close() // TODO add full support for the second TRX
 			close(p.closed)
 			return
 		}
 	}
+}
+
+func (p *Process) doAsync(f func()) {
+	p.opAsync <- f
 }
 
 func (p *Process) onConnected(connected bool) {
@@ -83,6 +92,16 @@ func (p *Process) onConnected(connected bool) {
 	}
 
 	p.client.StartIQ(0)
+}
+
+var peakColor tci.ARGB = tci.NewARGB(255, 255, 0, 0)
+
+func (p *Process) showPeaks(peaks []peak) {
+	// p.client.ClearSpots() // TODO this works only if there is only one TRX active
+	for _, peak := range peaks {
+		label := fmt.Sprintf("%d w%d", peak.CenterFrequency(), peak.Width())
+		p.client.AddSpot(label, tci.ModeCW, peak.CenterFrequency(), peakColor, "SDRainer")
+	}
 }
 
 type tciListener struct {
@@ -94,65 +113,20 @@ func (l *tciListener) Connected(connected bool) {
 }
 
 func (l *tciListener) SetDDS(trx int, frequency int) {
-	log.Printf("DDS: %d %d", trx, frequency)
+	l.process.trx[trx].SetCenterFrequency(frequency)
 }
 
 func (l *tciListener) SetIF(trx int, vfo tci.VFO, frequency int) {
-	log.Printf("IF: %d %d %d", trx, vfo, frequency)
-}
-
-func (l *tciListener) SetIFLimits(min, max int) {
-	log.Printf("IF_LIMITS %d %d", min, max)
-}
-
-func (l *tciListener) SetIQSampleRate(sampleRate tci.IQSampleRate) {
-	log.Printf("IQ_SAMPLERATE %d", sampleRate)
+	l.process.trx[trx].SetVFOOffset(vfo, frequency)
 }
 
 func (l *tciListener) IQData(trx int, sampleRate tci.IQSampleRate, data []float32) {
-	l.process.trx[trx].IQData(sampleRate, data)
-}
-
-type trxHandler struct {
-	process    *Process
-	trx        int
-	sampleRate float32
-	in         chan []float32
-}
-
-func newTRXHandler(process *Process, trx int) *trxHandler {
-	result := &trxHandler{
-		process: process,
-		trx:     trx,
-		in:      make(chan []float32, 10),
-	}
-	go result.run()
-	return result
-}
-
-func (h *trxHandler) run() {
-	for frame := range h.in {
-		log.Printf("incoming IQ frame with %d samples", len(frame))
-	}
-}
-
-func (h *trxHandler) Close() {
-	close(h.in)
-}
-
-func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
-	if h.sampleRate == 0 {
-		h.sampleRate = float32(sampleRate)
-	} else if h.sampleRate != float32(sampleRate) {
-		log.Printf("wrong incoming sample rate on trx %d: %d!", h.trx, sampleRate)
-		return
-	}
-
-	select {
-	case h.in <- data:
-		return
-	default:
-		log.Printf("IQ data skipped on trx %d", h.trx)
+	const partCount = 4
+	partLen := len(data) / partCount
+	for i := 0; i < partCount; i++ {
+		begin := i * partLen
+		end := begin + partLen
+		l.process.trx[trx].IQData(tci.IQSampleRate(sampleRate), data[begin:end])
 	}
 }
 
