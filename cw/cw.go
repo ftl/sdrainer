@@ -4,7 +4,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"time"
 
 	"github.com/ftl/sdrainer/dsp"
 )
@@ -15,12 +14,7 @@ const (
 	defaultMaxScale          = 12
 )
 
-type Clock interface {
-	Now() time.Time
-}
-
 type Demodulator struct {
-	clock        *manualClock
 	filter       *dsp.Goertzel
 	debouncer    *dsp.BoolDebouncer
 	decoder      *Decoder
@@ -38,12 +32,9 @@ func NewDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int
 	if bufferSize == 0 {
 		bufferSize = defaultBufferSize
 	}
-	clock := &manualClock{now: time.Now()}
 	result := &Demodulator{
-		clock:        clock,
 		filter:       dsp.NewDefaultGoertzel(pitch, sampleRate),
 		debouncer:    dsp.NewBoolDebouncer(defaultDebounceThreshold),
-		decoder:      NewDecoder(out, clock),
 		maxScale:     defaultMaxScale,
 		scale:        1,
 		channelCount: 1,
@@ -52,6 +43,7 @@ func NewDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int
 		close:        make(chan struct{}),
 		closed:       make(chan struct{}),
 	}
+	result.decoder = NewDecoder(out, sampleRate, result.filter.Blocksize())
 
 	go result.run()
 
@@ -163,7 +155,6 @@ func (d *Demodulator) do(f func()) {
 func (d *Demodulator) run() {
 	defer close(d.closed)
 	blocksize := d.filter.Blocksize()
-	tick := d.filter.Tick()
 	block := make(dsp.FilterBlock, 0)
 
 	// f, err := os.Create("frame.csv")
@@ -205,8 +196,6 @@ func (d *Demodulator) run() {
 			// 		log.Printf("cannot write stream file: %v", err)
 			// 	}
 			// }
-
-			d.clock.Add(tick)
 
 			magnitude, state, _, err := d.filter.Detect(block)
 			if err != nil {
@@ -251,16 +240,4 @@ func truncate(value float32) float32 {
 	} else {
 		return value
 	}
-}
-
-type manualClock struct {
-	now time.Time
-}
-
-func (c *manualClock) Now() time.Time {
-	return c.now
-}
-
-func (c *manualClock) Add(d time.Duration) {
-	c.now = c.now.Add(d)
 }

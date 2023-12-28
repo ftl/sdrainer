@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"time"
 
 	"github.com/ftl/digimodes/cw"
@@ -92,14 +93,16 @@ func (c *cwChar) empty() bool {
 	return c[0] == noSymbol
 }
 
+type ticks uint64
 type Decoder struct {
-	out   io.Writer
-	clock Clock
+	out         io.Writer
+	tickSeconds float64
+	ticks       ticks
 
 	lastState bool
-	onStart   time.Time
-	offStart  time.Time
-	ditTime   time.Duration
+	onStart   ticks
+	offStart  ticks
+	ditTime   ticks
 	wpm       float64
 	decoding  bool
 
@@ -109,16 +112,16 @@ type Decoder struct {
 	decodeTable map[cwChar]rune
 }
 
-func NewDecoder(out io.Writer, clock Clock) *Decoder {
+func NewDecoder(out io.Writer, sampleRate int, blockSize int) *Decoder {
+
 	result := &Decoder{
 		out:                  out,
-		clock:                clock,
-		offStart:             clock.Now(),
-		ditTime:              cw.WPMToDit(defaultWPM),
+		tickSeconds:          float64(blockSize) / float64(sampleRate),
 		wpm:                  defaultWPM,
 		abortDecodeAfterDits: 10,
 		decodeTable:          generateDecodeTable(),
 	}
+	result.ditTime = result.wpmToDit(result.wpm)
 	result.currentChar.clear()
 
 	return result
@@ -135,39 +138,51 @@ func generateDecodeTable() map[cwChar]rune {
 }
 
 func (d *Decoder) reset() {
-	d.ditTime = cw.WPMToDit(defaultWPM)
 	d.wpm = defaultWPM
+	d.ditTime = d.wpmToDit(d.wpm)
 }
 
 func (d *Decoder) presetWPM(wpm int) {
 	d.wpm = float64(wpm)
-	d.ditTime = cw.WPMToDit(wpm)
+	d.ditTime = d.wpmToDit(d.wpm)
+}
+
+func (d *Decoder) wpmToDit(wpm float64) ticks {
+	ditSeconds := 60.0 / (50.0 * wpm)
+
+	return ticks(math.Ceil(ditSeconds / d.tickSeconds))
+}
+
+func (d *Decoder) ditToWPM(ditTicks ticks) float64 {
+	ditSeconds := float64(ditTicks) * d.tickSeconds
+	return 60.0 / (50.0 * ditSeconds)
 }
 
 func (d *Decoder) Tick(state bool) {
-	now := d.clock.Now()
+	d.ticks++
+	now := d.ticks
 
 	if state != d.lastState {
 		if state {
 			d.onStart = now
-			offDuration := now.Sub(d.offStart)
+			offDuration := now - d.offStart
 			d.onRisingEdge(offDuration)
 		} else {
 			d.offStart = now
-			onDuration := now.Sub(d.onStart)
+			onDuration := now - d.onStart
 			d.onFallingEdge(onDuration)
 		}
 		d.decoding = true
 	}
 	d.lastState = state
 
-	var currentDuration time.Duration
+	var currentDuration ticks
 	if state {
-		currentDuration = now.Sub(d.onStart)
+		currentDuration = now - d.onStart
 	} else {
-		currentDuration = now.Sub(d.offStart)
+		currentDuration = now - d.offStart
 	}
-	upperBound := d.ditTime * time.Duration(d.abortDecodeAfterDits)
+	upperBound := d.ditTime * ticks(d.abortDecodeAfterDits)
 
 	if d.decoding && currentDuration > upperBound {
 		d.decoding = false
@@ -176,7 +191,7 @@ func (d *Decoder) Tick(state bool) {
 	}
 }
 
-func (d *Decoder) onRisingEdge(offDuration time.Duration) {
+func (d *Decoder) onRisingEdge(offDuration ticks) {
 	offRatio := float64(offDuration) / float64(d.ditTime)
 	// fmt.Printf("\noff for %v (%.3f) => ", offDuration, offRatio)
 
@@ -205,7 +220,7 @@ func (d *Decoder) onRisingEdge(offDuration time.Duration) {
 	}
 }
 
-func (d *Decoder) onFallingEdge(onDuration time.Duration) {
+func (d *Decoder) onFallingEdge(onDuration ticks) {
 	onRatio := float64(onDuration) / float64(d.ditTime)
 	// fmt.Printf("\non for %v (%.3f) => ", onDuration, onRatio)
 
@@ -223,7 +238,7 @@ func (d *Decoder) onFallingEdge(onDuration time.Duration) {
 	if onRatio >= 2 && onRatio < 6 {
 		d.appendSymbol(cw.Da)
 		// fmt.Print("-") // TODO REMOVE THIS
-		d.wpm = (d.wpm + ditToWPM(d.ditTime)) / 2.0
+		d.wpm = (d.wpm + d.ditToWPM(d.ditTime)) / 2.0
 	}
 }
 

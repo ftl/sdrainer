@@ -26,15 +26,12 @@ func TestDecodeTable(t *testing.T) {
 }
 
 func TestDecoder_RecordedStreams(t *testing.T) {
-	blockTick := 5 * time.Millisecond
-	clock := new(manualClock)
 	buffer := bytes.NewBuffer([]byte{})
-	decoder := NewDecoder(buffer, clock)
+	decoder := NewDecoder(buffer, 48000, 240)
 
 	stream, err := readLines("pse.txt")
 	require.NoError(t, err)
 	for _, state := range stream {
-		clock.Add(blockTick)
 		decoder.Tick(state == "1")
 	}
 	decoder.stop()

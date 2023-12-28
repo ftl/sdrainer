@@ -30,9 +30,8 @@ func TestDecoder(t *testing.T) {
 	blockTick := time.Duration(float64(filter.Blocksize()) / float64(sampleRate) * float64(time.Second))
 	require.True(t, blockTick > 0)
 
-	clock := new(manualClock)
 	buffer := bytes.NewBuffer([]byte{})
-	decoder := NewDecoder(buffer, clock)
+	decoder := NewDecoder(buffer, sampleRate, filter.Blocksize())
 
 	stop := make(chan struct{})
 	stopped := make(chan struct{})
@@ -48,8 +47,6 @@ func TestDecoder(t *testing.T) {
 				n, err := oscillator.Synth32(block)
 				require.NoError(t, err)
 				require.Equal(t, filter.Blocksize(), n)
-
-				clock.Add(blockTick)
 
 				_, state, n, err := filter.Detect(block)
 				require.NoError(t, err)
