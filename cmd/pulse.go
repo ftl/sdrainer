@@ -55,17 +55,17 @@ func runPulse(ctx context.Context, cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	decoder := cw.NewDecoder(os.Stdout, 700, source.SampleRate(), 0)
-	defer decoder.Close()
-	decoder.SetScale(pulseFlags.scale)
-	decoder.SetDebounceThreshold(pulseFlags.debounceThreshold)
-	decoder.SetMagnitudeThreshold(pulseFlags.magnitudeThreshold)
+	demodulator := cw.NewDemodulator(os.Stdout, 700, source.SampleRate(), 0)
+	defer demodulator.Close()
+	demodulator.SetScale(pulseFlags.scale)
+	demodulator.SetDebounceThreshold(pulseFlags.debounceThreshold)
+	demodulator.SetMagnitudeThreshold(pulseFlags.magnitudeThreshold)
 
-	stream, err := client.NewRecord(pulse.Float32Writer(decoder.Write), pulse.RecordBufferFragmentSize(2*uint32(decoder.Blocksize())))
+	stream, err := client.NewRecord(pulse.Float32Writer(demodulator.Write), pulse.RecordBufferFragmentSize(2*uint32(demodulator.Blocksize())))
 	if err != nil {
 		log.Fatal(err)
 	}
-	decoder.SetChannelCount(stream.Channels())
+	demodulator.SetChannelCount(stream.Channels())
 
 	stream.Start()
 	<-ctx.Done()

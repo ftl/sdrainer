@@ -92,7 +92,7 @@ func (c *cwChar) empty() bool {
 	return c[0] == noSymbol
 }
 
-type demodulator struct {
+type Decoder struct {
 	out   io.Writer
 	clock Clock
 
@@ -109,8 +109,8 @@ type demodulator struct {
 	decodeTable map[cwChar]rune
 }
 
-func newDemodulator(out io.Writer, clock Clock) *demodulator {
-	result := &demodulator{
+func NewDecoder(out io.Writer, clock Clock) *Decoder {
+	result := &Decoder{
 		out:                  out,
 		clock:                clock,
 		offStart:             clock.Now(),
@@ -134,17 +134,17 @@ func generateDecodeTable() map[cwChar]rune {
 	return result
 }
 
-func (d *demodulator) reset() {
+func (d *Decoder) reset() {
 	d.ditTime = cw.WPMToDit(defaultWPM)
 	d.wpm = defaultWPM
 }
 
-func (d *demodulator) presetWPM(wpm int) {
+func (d *Decoder) presetWPM(wpm int) {
 	d.wpm = float64(wpm)
 	d.ditTime = cw.WPMToDit(wpm)
 }
 
-func (d *demodulator) tick(state bool) {
+func (d *Decoder) tick(state bool) {
 	now := d.clock.Now()
 
 	if state != d.lastState {
@@ -176,7 +176,7 @@ func (d *demodulator) tick(state bool) {
 	}
 }
 
-func (d *demodulator) onRisingEdge(offDuration time.Duration) {
+func (d *Decoder) onRisingEdge(offDuration time.Duration) {
 	offRatio := float64(offDuration) / float64(d.ditTime)
 	// fmt.Printf("\noff for %v (%.3f) => ", offDuration, offRatio)
 
@@ -205,7 +205,7 @@ func (d *demodulator) onRisingEdge(offDuration time.Duration) {
 	}
 }
 
-func (d *demodulator) onFallingEdge(onDuration time.Duration) {
+func (d *Decoder) onFallingEdge(onDuration time.Duration) {
 	onRatio := float64(onDuration) / float64(d.ditTime)
 	// fmt.Printf("\non for %v (%.3f) => ", onDuration, onRatio)
 
@@ -231,7 +231,7 @@ func ditToWPM(dit time.Duration) float64 {
 	return 60.0 / (50.0 * float64(dit.Seconds()))
 }
 
-func (d *demodulator) appendSymbol(s cw.Symbol) {
+func (d *Decoder) appendSymbol(s cw.Symbol) {
 	if !d.currentChar.append(s) {
 		// TODO make this transparent to the user
 		d.decodeCurrentChar()
@@ -239,7 +239,7 @@ func (d *demodulator) appendSymbol(s cw.Symbol) {
 	}
 }
 
-func (d *demodulator) decodeCurrentChar() {
+func (d *Decoder) decodeCurrentChar() {
 	if d.currentChar.empty() {
 		// fmt.Print("X") // TODO REMOVE THIS
 		return
@@ -265,11 +265,11 @@ func (d *demodulator) decodeCurrentChar() {
 	d.currentChar.clear()
 }
 
-func (d *demodulator) writeToOutput(r rune) error {
+func (d *Decoder) writeToOutput(r rune) error {
 	_, err := fmt.Fprint(d.out, string(r))
 	return err
 }
 
-func (d *demodulator) stop() {
+func (d *Decoder) stop() {
 	d.decodeCurrentChar()
 }

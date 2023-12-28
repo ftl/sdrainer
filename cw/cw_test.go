@@ -13,11 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDemodulator(t *testing.T) {
+func TestDecoder(t *testing.T) {
 	sampleRate := 48000
 	pitch := 700.0
 	wpm := 20
-	// debounceTime := 6 * time.Millisecond
 	text := "hello world"
 
 	oscillator := osc.New(sampleRate)
@@ -32,9 +31,8 @@ func TestDemodulator(t *testing.T) {
 	require.True(t, blockTick > 0)
 
 	clock := new(manualClock)
-	// debouncer := newDebouncer(clock, debounceTime)
 	buffer := bytes.NewBuffer([]byte{})
-	demodulator := newDemodulator(buffer, clock)
+	decoder := NewDecoder(buffer, clock)
 
 	stop := make(chan struct{})
 	go func() {
@@ -55,7 +53,7 @@ func TestDemodulator(t *testing.T) {
 				require.Equal(t, filter.Blocksize(), n)
 
 				// debounced := debouncer.debounce(state)
-				demodulator.tick(state)
+				decoder.tick(state)
 			}
 		}
 	}()
@@ -64,6 +62,6 @@ func TestDemodulator(t *testing.T) {
 	require.NoError(t, err)
 
 	close(stop)
-	demodulator.stop()
+	decoder.stop()
 	assert.Equal(t, text, buffer.String())
 }

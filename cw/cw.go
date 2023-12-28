@@ -19,11 +19,11 @@ type Clock interface {
 	Now() time.Time
 }
 
-type Decoder struct {
+type Demodulator struct {
 	clock        *manualClock
 	filter       *dsp.Goertzel
 	debouncer    *dsp.BoolDebouncer
-	demodulator  *demodulator
+	decoder      *Decoder
 	maxScale     float64
 	scale        float32
 	channelCount int
@@ -34,16 +34,16 @@ type Decoder struct {
 	closed chan struct{}
 }
 
-func NewDecoder(out io.Writer, pitch float64, sampleRate int, bufferSize int) *Decoder {
+func NewDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int) *Demodulator {
 	if bufferSize == 0 {
 		bufferSize = defaultBufferSize
 	}
 	clock := &manualClock{now: time.Now()}
-	result := &Decoder{
+	result := &Demodulator{
 		clock:        clock,
 		filter:       dsp.NewDefaultGoertzel(pitch, sampleRate),
 		debouncer:    dsp.NewBoolDebouncer(defaultDebounceThreshold),
-		demodulator:  newDemodulator(out, clock),
+		decoder:      NewDecoder(out, clock),
 		maxScale:     defaultMaxScale,
 		scale:        1,
 		channelCount: 1,
@@ -58,7 +58,7 @@ func NewDecoder(out io.Writer, pitch float64, sampleRate int, bufferSize int) *D
 	return result
 }
 
-func (d *Decoder) Close() {
+func (d *Demodulator) Close() {
 	select {
 	case <-d.close:
 		return
@@ -68,13 +68,13 @@ func (d *Decoder) Close() {
 	}
 }
 
-func (d *Decoder) SetMaxScale(scale float64) {
+func (d *Demodulator) SetMaxScale(scale float64) {
 	d.do(func() {
 		d.maxScale = scale
 	})
 }
 
-func (d *Decoder) MaxScale() float64 {
+func (d *Demodulator) MaxScale() float64 {
 	var result float64
 	d.do(func() {
 		result = d.maxScale
@@ -82,25 +82,25 @@ func (d *Decoder) MaxScale() float64 {
 	return result
 }
 
-func (d *Decoder) SetScale(scale float64) {
+func (d *Demodulator) SetScale(scale float64) {
 	d.do(func() {
 		d.scale = float32(scale)
 	})
 }
 
-func (d *Decoder) SetChannelCount(channelCount int) {
+func (d *Demodulator) SetChannelCount(channelCount int) {
 	d.do(func() {
 		d.channelCount = channelCount
 	})
 }
 
-func (d *Decoder) SetDebounceThreshold(threshold int) {
+func (d *Demodulator) SetDebounceThreshold(threshold int) {
 	d.do(func() {
 		d.debouncer.SetThreshold(threshold)
 	})
 }
 
-func (d *Decoder) DebounceThreshold() int {
+func (d *Demodulator) DebounceThreshold() int {
 	var result int
 	d.do(func() {
 		result = d.debouncer.Threshold()
@@ -108,27 +108,27 @@ func (d *Decoder) DebounceThreshold() int {
 	return result
 }
 
-func (d *Decoder) PresetWPM(wpm int) {
+func (d *Demodulator) PresetWPM(wpm int) {
 	d.do(func() {
-		d.demodulator.presetWPM(wpm)
+		d.decoder.presetWPM(wpm)
 	})
 }
 
-func (d *Decoder) WPM() int {
+func (d *Demodulator) WPM() int {
 	var result int
 	d.do(func() {
-		result = int(math.Round(d.demodulator.wpm))
+		result = int(math.Round(d.decoder.wpm))
 	})
 	return result
 }
 
-func (d *Decoder) SetMagnitudeThreshold(threshold float64) {
+func (d *Demodulator) SetMagnitudeThreshold(threshold float64) {
 	d.do(func() {
 		d.filter.SetMagnitudeThreshold(threshold)
 	})
 }
 
-func (d *Decoder) MagnitudeThreshold() float64 {
+func (d *Demodulator) MagnitudeThreshold() float64 {
 	var result float64
 	d.do(func() {
 		result = d.filter.MagnitudeThreshold()
@@ -136,11 +136,11 @@ func (d *Decoder) MagnitudeThreshold() float64 {
 	return result
 }
 
-func (d *Decoder) Blocksize() int {
+func (d *Demodulator) Blocksize() int {
 	return d.filter.Blocksize()
 }
 
-func (d *Decoder) Write(buf []float32) (int, error) {
+func (d *Demodulator) Write(buf []float32) (int, error) {
 	n := 0
 	for i, sample := range buf {
 		if (i % d.channelCount) == 0 {
@@ -151,7 +151,7 @@ func (d *Decoder) Write(buf []float32) (int, error) {
 	return n, nil
 }
 
-func (d *Decoder) do(f func()) {
+func (d *Demodulator) do(f func()) {
 	select {
 	case <-d.closed:
 		return
@@ -160,7 +160,7 @@ func (d *Decoder) do(f func()) {
 	}
 }
 
-func (d *Decoder) run() {
+func (d *Demodulator) run() {
 	defer close(d.closed)
 	blocksize := d.filter.Blocksize()
 	tick := d.filter.Tick()
@@ -235,9 +235,9 @@ func (d *Decoder) run() {
 			// 	log.Printf("cannot write stream file: %v", err)
 			// }
 
-			d.demodulator.tick(debounced)
+			d.decoder.tick(debounced)
 		case <-d.close:
-			d.demodulator.stop()
+			d.decoder.stop()
 			return
 		}
 	}

@@ -25,19 +25,19 @@ func TestDecodeTable(t *testing.T) {
 	assert.Equal(t, '§', table[toCWChar(cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit, cw.Dit)])
 }
 
-func TestDemodulator_RecordedStreams(t *testing.T) {
+func TestDecoder_RecordedStreams(t *testing.T) {
 	blockTick := 5 * time.Millisecond
 	clock := new(manualClock)
 	buffer := bytes.NewBuffer([]byte{})
-	demodulator := newDemodulator(buffer, clock)
+	decoder := NewDecoder(buffer, clock)
 
 	stream, err := readLines("pse.txt")
 	require.NoError(t, err)
 	for _, state := range stream {
 		clock.Add(blockTick)
-		demodulator.tick(state == "1")
+		decoder.tick(state == "1")
 	}
-	demodulator.stop()
+	decoder.stop()
 
 	assert.Equal(t, "pse", buffer.String())
 }
