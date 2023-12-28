@@ -144,7 +144,7 @@ func (d *Decoder) presetWPM(wpm int) {
 	d.ditTime = cw.WPMToDit(wpm)
 }
 
-func (d *Decoder) tick(state bool) {
+func (d *Decoder) Tick(state bool) {
 	now := d.clock.Now()
 
 	if state != d.lastState {

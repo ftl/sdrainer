@@ -35,7 +35,7 @@ func TestDecoder_RecordedStreams(t *testing.T) {
 	require.NoError(t, err)
 	for _, state := range stream {
 		clock.Add(blockTick)
-		decoder.tick(state == "1")
+		decoder.Tick(state == "1")
 	}
 	decoder.stop()
 

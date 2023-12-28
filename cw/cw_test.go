@@ -53,7 +53,7 @@ func TestDecoder(t *testing.T) {
 				require.Equal(t, filter.Blocksize(), n)
 
 				// debounced := debouncer.debounce(state)
-				decoder.tick(state)
+				decoder.Tick(state)
 			}
 		}
 	}()

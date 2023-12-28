@@ -166,7 +166,7 @@ func (d *Demodulator) run() {
 	tick := d.filter.Tick()
 	block := make(dsp.FilterBlock, 0)
 
-	// f, err := os.Create("stream.csv")
+	// f, err := os.Create("frame.csv")
 	// if err != nil {
 	// 	log.Printf("cannot open stream file: %v", err)
 	// 	return
@@ -235,7 +235,7 @@ func (d *Demodulator) run() {
 			// 	log.Printf("cannot write stream file: %v", err)
 			// }
 
-			d.decoder.tick(debounced)
+			d.decoder.Tick(debounced)
 		case <-d.close:
 			d.decoder.stop()
 			return
