@@ -35,7 +35,10 @@ func TestDecoder(t *testing.T) {
 	decoder := NewDecoder(buffer, clock)
 
 	stop := make(chan struct{})
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
+
 		block := make(dsp.FilterBlock, filter.Blocksize())
 		for {
 			select {
@@ -52,7 +55,6 @@ func TestDecoder(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, filter.Blocksize(), n)
 
-				// debounced := debouncer.debounce(state)
 				decoder.Tick(state)
 			}
 		}
@@ -62,6 +64,7 @@ func TestDecoder(t *testing.T) {
 	require.NoError(t, err)
 
 	close(stop)
+	<-stopped
 	decoder.stop()
 	assert.Equal(t, text, buffer.String())
 }

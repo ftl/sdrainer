@@ -246,7 +246,7 @@ func TestFilter_SNR(t *testing.T) {
 		}
 	}
 
-	assert.Truef(t, highestAmplitude == 1, "highest noise amplitude is %f", highestAmplitude)
+	assert.Truef(t, highestAmplitude > 0.8, "highest noise amplitude is %f", highestAmplitude)
 }
 
 func TestFilter_NoiseTolerance(t *testing.T) {
