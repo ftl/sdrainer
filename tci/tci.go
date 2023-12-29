@@ -95,6 +95,7 @@ func (p *Process) onConnected(connected bool) {
 }
 
 var peakColor tci.ARGB = tci.NewARGB(255, 255, 0, 0)
+var decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
 
 func (p *Process) showPeaks(peaks []peak) {
 	// p.client.ClearSpots() // TODO this works only if there is only one TRX active
@@ -102,6 +103,18 @@ func (p *Process) showPeaks(peaks []peak) {
 		label := fmt.Sprintf("%d w%d", peak.CenterFrequency(), peak.Width())
 		p.client.AddSpot(label, tci.ModeCW, peak.CenterFrequency(), peakColor, "SDRainer")
 	}
+}
+
+func (p *Process) showDecode(peak peak) {
+	label := "DECODE"
+	p.client.DeleteSpot(label)
+	p.client.AddSpot(label, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
+	p.client.SetIF(0, tci.VFOA, peak.CenterFrequency()-int(p.trx[0].centerFrequency))
+}
+
+func (p *Process) hideDecode() {
+	label := "DECODE"
+	p.client.DeleteSpot(label)
 }
 
 type tciListener struct {

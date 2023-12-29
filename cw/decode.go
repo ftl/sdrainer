@@ -137,7 +137,7 @@ func generateDecodeTable() map[cwChar]rune {
 	return result
 }
 
-func (d *Decoder) reset() {
+func (d *Decoder) Reset() {
 	d.wpm = defaultWPM
 	d.ditTime = d.wpmToDit(d.wpm)
 }
