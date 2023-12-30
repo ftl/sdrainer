@@ -180,3 +180,102 @@ func (d *BoolDebouncer) Debounce(rawState bool) bool {
 	}
 	return d.effectiveState
 }
+
+// RollingVariance calculates the variance over n values.
+type RollingVariance[T Number] struct {
+	values []T
+	n      T
+	next   int
+
+	sumForMean     T
+	mean           T
+	sumForVariance T
+	variance       T
+}
+
+// NewRollingVariance with size n.
+func NewRollingVariance[T Number](n int) *RollingVariance[T] {
+	return &RollingVariance[T]{
+		values: make([]T, n),
+		n:      T(n),
+	}
+}
+
+// Put a new value into the rolling window and get the new variance back.
+func (v *RollingVariance[T]) Put(value T) T {
+	v.sumForMean -= v.values[v.next]
+	oldSummand := (v.values[v.next] - v.mean)
+	v.sumForVariance -= oldSummand * oldSummand
+
+	v.values[v.next] = value
+
+	v.sumForMean += v.values[v.next]
+	v.mean = v.sumForMean / v.n
+	newSummand := (v.values[v.next] - v.mean)
+	v.sumForVariance += newSummand * newSummand
+	v.variance = v.sumForVariance / v.n
+
+	v.next = (v.next + 1) % len(v.values)
+
+	return v.variance
+}
+
+// Get the current variance value.
+func (v *RollingVariance[T]) Get() T {
+	return v.variance
+}
+
+// Reset the rolling window.
+func (v *RollingVariance[T]) Reset() {
+	clear(v.values)
+	v.next = 0
+	v.sumForMean = 0
+	v.mean = 0
+	v.sumForVariance = 0
+	v.variance = 0
+}
+
+// RollingMean calculates the mean over n values.
+type RollingMean[T Number] struct {
+	values []T
+	n      T
+	next   int
+
+	sumForMean T
+	mean       T
+}
+
+// NewRollingMean with size n.
+func NewRollingMean[T Number](n int) *RollingMean[T] {
+	return &RollingMean[T]{
+		values: make([]T, n),
+		n:      T(n),
+	}
+}
+
+// Put a new value into the rolling window and get the new mean back.
+func (v *RollingMean[T]) Put(value T) T {
+	v.sumForMean -= v.values[v.next]
+
+	v.values[v.next] = value
+
+	v.sumForMean += v.values[v.next]
+	v.mean = v.sumForMean / v.n
+
+	v.next = (v.next + 1) % len(v.values)
+
+	return v.mean
+}
+
+// Get the current mean value.
+func (v *RollingMean[T]) Get() T {
+	return v.mean
+}
+
+// Reset the rolling window.
+func (v *RollingMean[T]) Reset() {
+	clear(v.values)
+	v.next = 0
+	v.sumForMean = 0
+	v.mean = 0
+}
