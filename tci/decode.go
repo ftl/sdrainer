@@ -10,37 +10,38 @@ import (
 )
 
 const (
-	silenceTimeout            = 300
-	silenceThreshold  float32 = 1
+	silenceTimeout            = 400
+	silenceThreshold  float32 = 20
+	minThreshold      float32 = 0
 	signalThreshold   float32 = 0.6
 	readjustAfter             = 100
 	readjustingPeriod         = 25
+	meanWindow                = 3
 
-	defaultDebounceThreshold = 2
+	defaultSignalDebounceThreshold = 1
 )
 
-type tracer interface {
-	trace(string, ...any)
-}
-
 type decoder struct {
-	debouncer *dsp.BoolDebouncer
-	decoder   *cw.Decoder
-	tracer    tracer
+	signalDebouncer *dsp.BoolDebouncer
+	decoder         *cw.Decoder
+	tracer          tracer
 
 	peak           *peak
 	lowTicks       int
-	maxValue       float32
-	minValue       float32
+	maxValue       [2]float32
+	minValue       [2]float32
+	boundsIndex    int
 	delta          float32
 	threshold      float32
 	maxAdjustTicks int
+	mean           *dsp.RollingMean[float32]
 }
 
 func newDecoder(sampleRate int, blockSize int) *decoder {
 	result := &decoder{
-		debouncer: dsp.NewBoolDebouncer(defaultDebounceThreshold),
-		decoder:   cw.NewDecoder(os.Stdout, sampleRate, blockSize),
+		signalDebouncer: dsp.NewBoolDebouncer(defaultSignalDebounceThreshold),
+		decoder:         cw.NewDecoder(os.Stdout, sampleRate, blockSize),
+		mean:            dsp.NewRollingMean[float32](meanWindow),
 	}
 	result.reset()
 
@@ -48,32 +49,45 @@ func newDecoder(sampleRate int, blockSize int) *decoder {
 }
 
 func (d *decoder) reset() {
-	d.maxValue = 0
-	d.minValue = math.MaxFloat32
+	d.maxValue[0] = 0
+	d.maxValue[1] = 0
+	d.minValue[0] = math.MaxFloat32
+	d.minValue[1] = math.MaxFloat32
+	d.boundsIndex = 0
 	d.lowTicks = 0
+	d.mean.Reset()
 }
 
 func (d *decoder) adjust(value float32) {
+	mean := d.mean.Put(value)
+
 	d.maxAdjustTicks++
 	if d.maxAdjustTicks > readjustAfter {
-		d.maxValue = value
+		d.maxValue[d.boundsIndex] = 0
+		d.minValue[d.boundsIndex] = math.MaxFloat32
+		d.boundsIndex = (d.boundsIndex + 1) % 2
 		d.maxAdjustTicks = 0
-	} else if d.maxValue < value {
-		d.maxValue = value
 	}
-	if d.minValue > value {
-		d.minValue = value
-	}
-	d.delta = d.maxValue - d.minValue
 
+	otherBoundsIndex := (d.boundsIndex + 1) % 2
+	if d.maxValue[otherBoundsIndex] < mean {
+		d.maxValue[otherBoundsIndex] = mean
+	}
+	if d.minValue[otherBoundsIndex] > value {
+		d.minValue[otherBoundsIndex] = value
+	}
+	if d.maxValue[d.boundsIndex] < mean {
+		d.maxValue[d.boundsIndex] = mean
+	}
+	if d.minValue[d.boundsIndex] > value {
+		d.minValue[d.boundsIndex] = value
+	}
+
+	d.delta = d.maxValue[d.boundsIndex] - d.minValue[d.boundsIndex]
 	if d.delta > silenceThreshold {
-		d.threshold = signalThreshold*d.delta + d.minValue
+		d.threshold = max(minThreshold, signalThreshold*d.delta+d.minValue[d.boundsIndex])
 	} else {
-		d.threshold = signalThreshold*d.delta + d.maxValue
-	}
-
-	if d.tracer != nil {
-		d.tracer.trace("%f;%f;%f;%f;%f\n", d.maxValue, d.minValue, d.delta, d.threshold, value) // TODO remove tracing
+		d.threshold = max(minThreshold, signalThreshold*d.delta+d.maxValue[d.boundsIndex])
 	}
 }
 
@@ -82,7 +96,7 @@ func (d *decoder) readjusting() bool {
 }
 
 func (d *decoder) isHigh(value float32) bool {
-	return (d.delta > silenceThreshold) && (value > d.threshold) && (d.maxValue > d.threshold)
+	return (value > d.threshold)
 }
 
 func (d *decoder) Attach(peak *peak) {
@@ -101,11 +115,11 @@ func (d *decoder) Detach() {
 	log.Printf("\ndecoding stopped\n")
 }
 
-func (d *decoder) PeakRange() (int, int, float32) {
+func (d *decoder) PeakRange() (int, int) {
 	if !d.Attached() {
-		return 0, 0, 0
+		return 0, 0
 	}
-	return d.peak.from, d.peak.to, d.peak.max
+	return d.peak.from, d.peak.to
 }
 
 func (d *decoder) TimeoutExceeded() bool {
@@ -120,11 +134,19 @@ func (d *decoder) Tick(value float32) {
 	d.adjust(value)
 
 	state := d.isHigh(value)
-	debounced := d.debouncer.Debounce(state)
+	debounced := d.signalDebouncer.Debounce(state)
 
 	d.decoder.Tick(debounced)
 
-	// log.Printf("debounced: %t value: %f threshold: %f delta: %f lowTicks: %d", debounced, value, d.threshold, d.delta, d.lowTicks)
+	stateInt := -1.0
+	_ = stateInt
+	if debounced {
+		stateInt = 0.8
+	}
+
+	if d.tracer != nil {
+		d.tracer.Trace("%f;%f;%f;%f;%f\n", d.delta, d.threshold, d.maxValue[d.boundsIndex], value, stateInt) // TODO remove tracing
+	}
 
 	if debounced {
 		d.lowTicks = 0

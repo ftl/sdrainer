@@ -1,17 +1,20 @@
 package tci
 
 import (
-	"fmt"
-	"io"
 	"log"
 	"math"
 	"math/rand"
-	"os"
 	"time"
 
 	"github.com/ftl/sdrainer/dsp"
 	tci "github.com/ftl/tci/client"
 )
+
+type tracer interface {
+	Start()
+	Trace(string, ...any)
+	Stop()
+}
 
 type trxHandler struct {
 	process         *Process
@@ -26,7 +29,7 @@ type trxHandler struct {
 	fft     *dsp.FFT[float32]
 	decoder *decoder
 
-	traceFile io.WriteCloser
+	tracer tracer
 }
 
 func newTRXHandler(process *Process, trx int) *trxHandler {
@@ -37,6 +40,9 @@ func newTRXHandler(process *Process, trx int) *trxHandler {
 		in:  make(chan []float32, 100),
 		op:  make(chan func()),
 		fft: dsp.NewFFT[float32](),
+
+		tracer: NewFileTracer("trace.csv"),
+		// tracer: NewUDPTracer("localhost:3536"),
 	}
 	go result.run()
 	return result
@@ -44,7 +50,7 @@ func newTRXHandler(process *Process, trx int) *trxHandler {
 
 func (h *trxHandler) Close() {
 	close(h.in)
-	h.stopTrace()
+	h.tracer.Stop()
 }
 
 func (h *trxHandler) do(f func()) {
@@ -54,6 +60,9 @@ func (h *trxHandler) do(f func()) {
 func (h *trxHandler) SetCenterFrequency(frequency int) {
 	h.do(func() {
 		h.centerFrequency = frequency
+		if h.decoder != nil {
+			h.decoder.reset()
+		}
 	})
 }
 
@@ -76,8 +85,8 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 			max:           0.1,
 		})
 
-		// h.startTrace() // TODO remove tracing
 	})
+	// h.tracer.Start() // TODO remove tracing
 }
 
 func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
@@ -85,7 +94,7 @@ func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
 		h.sampleRate = int(sampleRate)
 		h.blockSize = len(data) / 2
 		h.decoder = newDecoder(int(sampleRate), len(data))
-		h.decoder.tracer = h
+		h.decoder.tracer = h.tracer
 	} else if h.sampleRate != int(sampleRate) {
 		log.Printf("wrong incoming sample rate on trx %d: %d!", h.trx, sampleRate)
 		return
@@ -105,7 +114,6 @@ func (h *trxHandler) run() {
 	var spectrum block
 	var cumulation block
 	var peaks []peak
-	var threshold float32
 
 	cumulationSize := 30
 	cumulationCount := 0
@@ -136,21 +144,22 @@ func (h *trxHandler) run() {
 				peaks = make([]peak, 0, h.blockSize)
 			}
 
-			h.fft.IQToSpectrum(spectrum, frame, dsp.Magnitude[float32])
+			shiftedMagnitude := func(fftValue complex128, blockSize int) float32 {
+				return dsp.Magnitude2dBm[float32](fftValue, blockSize) + 120
+			}
+			h.fft.IQToSpectrum(spectrum, frame, shiftedMagnitude)
 
 			if h.decoder != nil && h.decoder.Attached() {
-				begin, end, peakMax := h.decoder.PeakRange()
-				maxValue, _ := spectrum.rangeMax(begin, end)
-				maxRatio := maxValue / peakMax
+				maxValue, _ := spectrum.rangeMax(h.decoder.PeakRange())
 
-				h.decoder.Tick(maxRatio)
+				h.decoder.Tick(maxValue) // TODO this should not happen here
 
 				if true && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
 					h.decoder.Detach()
 					h.process.doAsync(func() {
 						h.process.hideDecode()
 					})
-					h.stopTrace()
+					// h.tracer.Stop()
 				}
 			}
 
@@ -158,15 +167,19 @@ func (h *trxHandler) run() {
 				cumulation[i] += spectrum[i]
 			}
 			cumulationCount++
-			if cumulationCount == cumulationSize {
-				peaks, threshold = h.detectPeaks(peaks, cumulation)
 
-				if false && ((len(peaks) > 0 && len(peaks) < 100) || cycle > 100) { // TODO remove tracing code
-					frameToCSV(spectrum, peaksToPeakFrame(peaks, h.blockSize), threshold)
-					if true {
-						panic("FRAME SAVED TO FILE")
-					}
-				}
+			if cumulationCount == cumulationSize {
+				var threshold float32
+				peaks, threshold = h.detectPeaks(peaks, cumulation)
+				_ = threshold
+
+				// if h.tracer != nil && cycle > 100 {
+				// 	peakFrame := peaksToPeakFrame(peaks, h.blockSize)
+				// 	for i, v := range cumulation {
+				// 		h.tracer.Trace("%f;%f;%f\n", v, threshold, peakFrame[i])
+				// 	}
+				// 	h.tracer.Stop()
+				// }
 
 				if true && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() { // TODO REMOVE INACTIVATION
 					peakIndex := rand.Intn(len(peaks))
@@ -186,7 +199,7 @@ func (h *trxHandler) run() {
 
 					if !traced {
 						traced = true
-						// h.startTrace() // TODO remove tracing
+						// h.tracer.Start() // TODO remove tracing
 					}
 				}
 
@@ -198,26 +211,30 @@ func (h *trxHandler) run() {
 }
 
 func (h *trxHandler) detectPeaks(peaks []peak, spectrum block) ([]peak, float32) {
-	const peakThreshold float32 = 0.15    // 0.3  // 0.075
-	const silenceThreshold float32 = 0.25 // 1 // 0.25
-	const lowerBound float32 = 0.025      // 0.1     // 0.025
+	const peakThreshold float32 = 0.3
+	const silenceThreshold float32 = 400
+	const edgeWidth = 70
 	peaks = peaks[:0]
 
-	var max float32 = lowerBound
+	var max float32 = 0
 	var min float32 = math.MaxFloat32
-	for _, v := range spectrum {
+	for i, v := range spectrum {
+		if (i <= edgeWidth) || (i > spectrum.size()-edgeWidth) {
+			continue
+		}
 		if max < v {
 			max = v
 		}
-		if min > v && v > lowerBound {
+		if min > v {
 			min = v
 		}
 	}
-	if (max - min) < silenceThreshold {
+	delta := max - min
+	if delta < silenceThreshold {
 		return peaks, 0
 	}
 
-	threshold := peakThreshold
+	threshold := peakThreshold*delta + min
 	var currentPeak *peak
 	for i, v := range spectrum {
 		if currentPeak == nil && v > threshold {
@@ -255,36 +272,6 @@ func (h *trxHandler) frequencyToBin(frequency int) int {
 	return (frequency-h.centerFrequency)/binSize + (h.blockSize / 2)
 }
 
-func (h *trxHandler) startTrace() {
-	if h.traceFile != nil {
-		return
-	}
-
-	var err error
-	h.traceFile, err = os.Create("trace.csv")
-	if err != nil {
-		h.traceFile = nil
-		log.Printf("cannot start trace: %v", err)
-	}
-}
-
-func (h *trxHandler) trace(format string, args ...any) {
-	if h.traceFile == nil {
-		return
-	}
-
-	fmt.Fprintf(h.traceFile, format, args...)
-}
-
-func (h *trxHandler) stopTrace() {
-	if h.traceFile == nil {
-		return
-	}
-
-	h.traceFile.Close()
-	h.traceFile = nil
-}
-
 type binEdge float32
 
 const (
@@ -299,14 +286,6 @@ func (b block) size() int {
 	return len(b)
 }
 
-func (b block) checkRange(from, to int, threshold float32) bool {
-	var value float32
-	for i := from; i <= to; i++ {
-		value += b[i]
-	}
-	return value > threshold
-}
-
 func (b block) rangeSum(from, to int) float32 {
 	var sum float32
 	for i := from; i <= to; i++ {
@@ -315,8 +294,12 @@ func (b block) rangeSum(from, to int) float32 {
 	return sum
 }
 
+func (b block) rangeMean(from, to int) float32 {
+	return b.rangeSum(from, to) / float32(to-from+1)
+}
+
 func (b block) rangeMax(from, to int) (float32, int) {
-	var maxValue float32
+	var maxValue float32 = -1 * math.MaxFloat32
 	var maxI int
 	for i := from; i <= to; i++ {
 		if maxValue < b[i] {
@@ -325,17 +308,6 @@ func (b block) rangeMax(from, to int) (float32, int) {
 		}
 	}
 	return maxValue, maxI
-}
-
-func (b block) rangeValues(from, to int) (sum float32, max float32, mean float32) {
-	for i := from; i <= to; i++ {
-		sum += b[i]
-		if max < b[i] {
-			max = b[i]
-		}
-	}
-	mean = sum / float32(to-from+1)
-	return sum, max, mean
 }
 
 type peak struct {
@@ -373,20 +345,4 @@ func peaksToPeakFrame(peaks []peak, blockSize int) []float32 {
 	}
 
 	return result
-}
-
-func frameToCSV(frame []float32, peakFrame []float32, threshold float32) {
-	f, err := os.Create("frame.csv")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	for i, v := range frame {
-		var peak float32
-		if peakFrame != nil {
-			peak = peakFrame[i]
-		}
-		fmt.Fprintf(f, "%f;%f;%f\n", v, peak, threshold)
-	}
 }
