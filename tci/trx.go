@@ -41,8 +41,8 @@ func newTRXHandler(process *Process, trx int) *trxHandler {
 		op:  make(chan func()),
 		fft: dsp.NewFFT[float32](),
 
-		tracer: NewFileTracer("trace.csv"),
-		// tracer: NewUDPTracer("localhost:3536"),
+		// tracer: NewFileTracer("trace.csv"),
+		tracer: NewUDPTracer("localhost:3536"),
 	}
 	go result.run()
 	return result
@@ -78,8 +78,8 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 		freq := h.vfoOffset + h.centerFrequency
 		bin := h.frequencyToBin(freq)
 		h.decoder.Attach(&peak{
-			from:          bin - 2,
-			to:            bin + 2,
+			from:          bin - 1,
+			to:            bin + 1,
 			fromFrequency: freq,
 			toFrequency:   freq,
 			max:           0.1,
@@ -95,6 +95,7 @@ func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
 		h.blockSize = len(data) / 2
 		h.decoder = newDecoder(int(sampleRate), len(data))
 		h.decoder.tracer = h.tracer
+		// h.decoder.decoder.SetTracer(h.tracer)
 	} else if h.sampleRate != int(sampleRate) {
 		log.Printf("wrong incoming sample rate on trx %d: %d!", h.trx, sampleRate)
 		return
@@ -159,7 +160,7 @@ func (h *trxHandler) run() {
 					h.process.doAsync(func() {
 						h.process.hideDecode()
 					})
-					// h.tracer.Stop()
+					h.tracer.Stop()
 				}
 			}
 
@@ -186,8 +187,8 @@ func (h *trxHandler) run() {
 					peak := peaks[peakIndex]
 
 					peak.max = peak.max / float32(cumulationSize)
-					peak.from = max(0, peak.maxBin-3)
-					peak.to = min(peak.maxBin+3, h.blockSize-1)
+					peak.from = max(0, peak.maxBin-1)
+					peak.to = min(peak.maxBin+1, h.blockSize-1)
 					peak.fromFrequency = h.binToFrequency(peak.from, h.blockSize, binFrom)
 					peak.toFrequency = h.binToFrequency(peak.to, h.blockSize, binTo)
 
@@ -198,8 +199,8 @@ func (h *trxHandler) run() {
 					})
 
 					if !traced {
-						traced = true
-						// h.tracer.Start() // TODO remove tracing
+						// traced = true
+						h.tracer.Start() // TODO remove tracing
 					}
 				}
 

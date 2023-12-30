@@ -145,7 +145,7 @@ func (d *decoder) Tick(value float32) {
 	}
 
 	if d.tracer != nil {
-		d.tracer.Trace("%f;%f;%f;%f;%f\n", d.delta, d.threshold, d.maxValue[d.boundsIndex], value, stateInt) // TODO remove tracing
+		// d.tracer.Trace("%f;%f;%f;%f;%f\n", d.delta, d.threshold, d.maxValue[d.boundsIndex], value, stateInt) // TODO remove tracing
 	}
 
 	if debounced {

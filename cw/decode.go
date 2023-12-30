@@ -28,6 +28,10 @@ const (
 	maxSymbolCount = 8
 )
 
+type Tracer interface {
+	Trace(string, ...any)
+}
+
 var noSymbol = cw.Symbol{}
 
 type cwChar [maxSymbolCount]cw.Symbol
@@ -93,7 +97,7 @@ func (c *cwChar) empty() bool {
 	return c[0] == noSymbol
 }
 
-type ticks uint64
+type ticks float64
 type Decoder struct {
 	out         io.Writer
 	tickSeconds float64
@@ -110,6 +114,8 @@ type Decoder struct {
 
 	currentChar cwChar
 	decodeTable map[cwChar]rune
+
+	tracer Tracer
 }
 
 func NewDecoder(out io.Writer, sampleRate int, blockSize int) *Decoder {
@@ -135,6 +141,10 @@ func generateDecodeTable() map[cwChar]rune {
 		result[c] = text
 	}
 	return result
+}
+
+func (d *Decoder) SetTracer(tracer Tracer) {
+	d.tracer = tracer
 }
 
 func (d *Decoder) Reset() {
@@ -184,6 +194,14 @@ func (d *Decoder) Tick(state bool) {
 	}
 	upperBound := d.ditTime * ticks(d.abortDecodeAfterDits)
 
+	if d.tracer != nil {
+		stateInt := -1
+		if state {
+			stateInt = 1
+		}
+		d.tracer.Trace("%f;%f;%d\n", d.ditTime, 3.0, stateInt) // TRACING
+	}
+
 	if d.decoding && currentDuration > upperBound {
 		d.decoding = false
 		d.decodeCurrentChar()
@@ -197,10 +215,10 @@ func (d *Decoder) onRisingEdge(offDuration ticks) {
 
 	lack := 1.0
 	if d.wpm > 30 {
-		lack = 1.2
+		lack = 0.75
 	}
 	if d.wpm > 35 {
-		lack = 1.5
+		lack = 0.60
 	}
 	lowerBound := 2 * lack
 	upperBound := 5 * lack
@@ -224,11 +242,11 @@ func (d *Decoder) onFallingEdge(onDuration ticks) {
 	onRatio := float64(onDuration) / float64(d.ditTime)
 	// fmt.Printf("\non for %v (%.3f) => ", onDuration, onRatio)
 
-	if onRatio < 2 || d.ditTime == 0 {
-		d.ditTime = (onDuration + d.ditTime + d.ditTime) / 3
+	if (onRatio > 0.25 && onRatio < 2) || d.ditTime == 0 {
+		d.ditTime = max(2.5, (onDuration+d.ditTime+d.ditTime)/3)
 	}
-	if onRatio > 5 {
-		d.ditTime = onDuration + d.ditTime
+	if onRatio > 7 {
+		d.ditTime *= 2
 	}
 
 	if onRatio < 2 && onRatio > 0.6 {
