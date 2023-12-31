@@ -2,14 +2,14 @@ github.com/cpuguy83/go-md2man/v2 v2.0.3/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46t
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/ftl/digimodes v0.0.0-20231231093053-9fec5594f98f h1:0DH21nFgkyghTFoWIXa3ZzyWomBn9K8RwAeJT6P1niY=
-github.com/ftl/digimodes v0.0.0-20231231093053-9fec5594f98f/go.mod h1:ZtWpsmBg36VPXZ/TdS3xG99SfmQ6ym4jOpaZyGlKQvk=
+github.com/ftl/digimodes v0.0.0-20231231131023-cffadad68e9e h1:Q0k8oR1ukq2u4rkUXEiaWgYvk3SLghao9aDqdxQhch0=
+github.com/ftl/digimodes v0.0.0-20231231131023-cffadad68e9e/go.mod h1:ZtWpsmBg36VPXZ/TdS3xG99SfmQ6ym4jOpaZyGlKQvk=
 github.com/ftl/patrix v0.0.0-20231216163204-d2f8d83f211b h1:AQueJK4PntymzZk8Angx6eanwJzqoe/68PZivJEqK+4=
 github.com/ftl/patrix v0.0.0-20231216163204-d2f8d83f211b/go.mod h1:KfQXeQeC7p1bJ7RlM4A/FLZJfgmtlxC3ftA2NxpmCSs=
 github.com/ftl/tci v0.3.2 h1:1Qdgprldiv7/DQvuK96OHMVqb+SDunqbxTHDcWsE5Tk=
 github.com/ftl/tci v0.3.2/go.mod h1:3B8x8FI/kBbUwbWnz725tTiiiNfJpIL9cQ67TnjW3aU=
-github.com/gorilla/websocket v1.5.0 h1:PPwGk2jz7EePpoHN/+ClbZu8SPxiqlu12wZP/3sWmnc=
-github.com/gorilla/websocket v1.5.0/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/gorilla/websocket v1.5.1 h1:gmztn0JnHVt9JZquRuzLw3g4wouNVzKL15iLr/zn/QY=
+github.com/gorilla/websocket v1.5.1/go.mod h1:x3kM2JMyaluk02fnUJpQuwD2dCS5NDG2ZHL0uE0tcaY=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/jfreymuth/pulse v0.1.0 h1:KN38/9hoF9PJvP5DpEVhMRKNuwnJUonc8c9ARorRXUA=
@@ -29,6 +29,8 @@ github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcU
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
 golang.org/x/exp v0.0.0-20231226003508-02704c960a9b h1:kLiC65FbiHWFAOu+lxwNPujcsl8VYyTYYEZnsOO1WK4=
 golang.org/x/exp v0.0.0-20231226003508-02704c960a9b/go.mod h1:iRJReGqOEeBhDZGkGbynYwcHlctCvnjTYIamk7uXpHI=
+golang.org/x/net v0.19.0 h1:zTwKpTd2XuCqf8huc7Fo2iSy+4RHPd10s4KzeTnVr1c=
+golang.org/x/net v0.19.0/go.mod h1:CfAk/cbD4CthTvqiEl8NpboMuiuOYsAr/7NOjZJtv1U=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v2 v2.2.2/go.mod h1:hI93XBmqTisBFMUTm0b8Fm+jr3Dg1NNxqwp+5A1VGuI=

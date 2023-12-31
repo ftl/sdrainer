@@ -9,7 +9,7 @@ go 1.21
 // replace github.com/ftl/tci => ../tci
 
 require (
-	github.com/ftl/digimodes v0.0.0-20231231093053-9fec5594f98f
+	github.com/ftl/digimodes v0.0.0-20231231131023-cffadad68e9e
 	github.com/ftl/patrix v0.0.0-20231216163204-d2f8d83f211b
 	github.com/ftl/tci v0.3.2
 	github.com/jfreymuth/pulse v0.1.0
@@ -21,9 +21,10 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
+	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	golang.org/x/net v0.19.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
