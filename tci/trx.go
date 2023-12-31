@@ -72,7 +72,7 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 	}
 	h.do(func() {
 		h.vfoOffset = offset
-		if false || h.blockSize == 0 { // TODO REMOVE INACTIVATION
+		if true || h.blockSize == 0 { // TODO REMOVE INACTIVATION
 			return
 		}
 		freq := h.vfoOffset + h.centerFrequency
@@ -86,7 +86,7 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 		})
 
 	})
-	h.tracer.Start() // TODO remove tracing
+	// h.tracer.Start() // TODO remove tracing
 }
 
 func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
@@ -95,7 +95,7 @@ func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
 		h.blockSize = len(data) / 2
 		h.decoder = newDecoder(int(sampleRate), len(data))
 		h.decoder.tracer = h.tracer
-		// h.decoder.decoder.SetTracer(h.tracer)
+		h.decoder.decoder.SetTracer(h.tracer)
 	} else if h.sampleRate != int(sampleRate) {
 		log.Printf("wrong incoming sample rate on trx %d: %d!", h.trx, sampleRate)
 		return
@@ -158,7 +158,7 @@ func (h *trxHandler) run() {
 
 				h.decoder.Tick(maxValue, noiseFloor)
 
-				if false && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
+				if true && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
 					h.decoder.Detach()
 					h.process.doAsync(func() {
 						h.process.hideDecode()
@@ -185,7 +185,7 @@ func (h *trxHandler) run() {
 				// 	h.tracer.Stop()
 				// }
 
-				if false && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() { // TODO REMOVE INACTIVATION
+				if true && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() { // TODO REMOVE INACTIVATION
 					peakIndex := rand.Intn(len(peaks))
 					peak := peaks[peakIndex]
 
@@ -202,7 +202,7 @@ func (h *trxHandler) run() {
 
 					if !traced {
 						// traced = true
-						h.tracer.Start() // TODO remove tracing
+						// h.tracer.Start() // TODO remove tracing
 					}
 				}
 

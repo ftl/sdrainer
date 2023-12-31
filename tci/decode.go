@@ -11,11 +11,7 @@ import (
 const (
 	signalThreshold float32 = 15
 
-	silenceTimeout           = 400
-	silenceThreshold float32 = 15
-	minThreshold     float32 = 0
-	readjustAfter            = 20
-	meanWindow               = 3
+	silenceTimeout = 400
 
 	defaultSignalDebounceThreshold = 1
 )
@@ -88,7 +84,7 @@ func (d *decoder) Tick(value float32, noiseFloor float32) {
 	}
 
 	if d.tracer != nil {
-		d.tracer.Trace("%f;%f;%f;%f\n", noiseFloor, threshold, value, stateInt) // TODO remove tracing
+		// d.tracer.Trace("%f;%f;%f;%f\n", noiseFloor, threshold, value, stateInt) // TODO remove tracing
 	}
 
 	if debounced {
