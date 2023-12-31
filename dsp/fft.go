@@ -21,6 +21,22 @@ func NewFFT[T Number]() *FFT[T] {
 	return &FFT[T]{}
 }
 
+func (f *FFT[T]) IQToSpectrumAndPSD(spectrum []T, psd []T, iqSamples []T, projection func(complex128, int) T) {
+	f.setSamplesFromIQ(iqSamples)
+
+	fftResult := fft.FFT(f.samples)
+	blockSize := len(fftResult)
+	if len(spectrum) != blockSize {
+		panic(fmt.Sprintf("the spectrum slice must have the same length as the FFT's result: %d", blockSize))
+	}
+
+	for i := range fftResult {
+		k := binToSpectrumIndex(i, blockSize)
+		spectrum[k] = projection(fftResult[i], blockSize)
+		psd[k] = T(math.Pow(real(fftResult[i]), 2) + math.Pow(imag(fftResult[i]), 2))
+	}
+}
+
 func (f *FFT[T]) IQToSpectrum(spectrum []T, iqSamples []T, projection func(complex128, int) T) {
 	f.setSamplesFromIQ(iqSamples)
 
@@ -64,4 +80,8 @@ func Magnitude[T Number](fftValue complex128, blockSize int) T {
 
 func Magnitude2dBm[T Number](fftValue complex128, blockSize int) T {
 	return T(10.0 * math.Log10(20.0*(math.Pow(real(fftValue), 2)+math.Pow(imag(fftValue), 2))/math.Pow(float64(blockSize), 2)))
+}
+
+func PSDValue2dBm[T Number](psdValue T, blockSize int) T {
+	return T(10.0 * math.Log10(20.0*float64(psdValue)/math.Pow(float64(blockSize), 2)))
 }
