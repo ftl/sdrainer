@@ -72,7 +72,7 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 	}
 	h.do(func() {
 		h.vfoOffset = offset
-		if true || h.blockSize == 0 { // TODO REMOVE INACTIVATION
+		if false || h.blockSize == 0 { // TODO REMOVE INACTIVATION
 			return
 		}
 		freq := h.vfoOffset + h.centerFrequency
@@ -86,7 +86,7 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 		})
 
 	})
-	// h.tracer.Start() // TODO remove tracing
+	h.tracer.Start() // TODO remove tracing
 }
 
 func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
@@ -113,6 +113,7 @@ func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
 
 func (h *trxHandler) run() {
 	var spectrum block
+	var psd block
 	var cumulation block
 	var peaks []peak
 
@@ -141,6 +142,7 @@ func (h *trxHandler) run() {
 			}
 			if spectrum.size() != h.blockSize {
 				spectrum = make([]float32, h.blockSize)
+				psd = make([]float32, h.blockSize)
 				cumulation = make([]float32, h.blockSize)
 				peaks = make([]peak, 0, h.blockSize)
 			}
@@ -148,14 +150,15 @@ func (h *trxHandler) run() {
 			shiftedMagnitude := func(fftValue complex128, blockSize int) float32 {
 				return dsp.Magnitude2dBm[float32](fftValue, blockSize) + 120
 			}
-			h.fft.IQToSpectrum(spectrum, frame, shiftedMagnitude)
+			h.fft.IQToSpectrumAndPSD(spectrum, psd, frame, shiftedMagnitude)
+			noiseFloor := h.findNoiseFloor(psd)
 
 			if h.decoder != nil && h.decoder.Attached() {
 				maxValue, _ := spectrum.rangeMax(h.decoder.PeakRange())
 
-				h.decoder.Tick(maxValue) // TODO this should not happen here
+				h.decoder.Tick(maxValue, noiseFloor)
 
-				if true && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
+				if false && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
 					h.decoder.Detach()
 					h.process.doAsync(func() {
 						h.process.hideDecode()
@@ -171,18 +174,18 @@ func (h *trxHandler) run() {
 
 			if cumulationCount == cumulationSize {
 				var threshold float32
-				peaks, threshold = h.detectPeaks(peaks, cumulation)
+				peaks, threshold = h.detectPeaks(peaks, cumulation, cumulationSize, noiseFloor)
 				_ = threshold
 
 				// if h.tracer != nil && cycle > 100 {
 				// 	peakFrame := peaksToPeakFrame(peaks, h.blockSize)
 				// 	for i, v := range cumulation {
-				// 		h.tracer.Trace("%f;%f;%f\n", v, threshold, peakFrame[i])
+				// 		h.tracer.Trace("%f;%f;%f;%f\n", v/float32(cumulationSize), threshold, noiseFloor, peakFrame[i])
 				// 	}
 				// 	h.tracer.Stop()
 				// }
 
-				if true && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() { // TODO REMOVE INACTIVATION
+				if false && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() { // TODO REMOVE INACTIVATION
 					peakIndex := rand.Intn(len(peaks))
 					peak := peaks[peakIndex]
 
@@ -193,7 +196,6 @@ func (h *trxHandler) run() {
 					peak.toFrequency = h.binToFrequency(peak.to, h.blockSize, binTo)
 
 					h.decoder.Attach(&peak)
-					h.decoder.Tick(peak.max)
 					h.process.doAsync(func() {
 						h.process.showDecode(peak)
 					})
@@ -211,43 +213,47 @@ func (h *trxHandler) run() {
 	}
 }
 
-func (h *trxHandler) detectPeaks(peaks []peak, spectrum block) ([]peak, float32) {
-	const peakThreshold float32 = 0.3
-	const silenceThreshold float32 = 400
+func (h *trxHandler) findNoiseFloor(psd block) float32 {
 	const edgeWidth = 70
+
+	windowSize := len(psd) / 10
+	var minValue float32 = math.MaxFloat32
+	var sum float32
+	count := 0
+	for i := edgeWidth; i < len(psd)-edgeWidth; i++ {
+		if count == windowSize {
+			count = 0
+			mean := sum / float32(windowSize)
+			if mean < minValue {
+				minValue = mean
+			}
+			sum = 0
+		}
+		sum += psd[i]
+		count++
+	}
+
+	return dsp.PSDValue2dBm(minValue, h.blockSize) + 120
+}
+
+func (h *trxHandler) detectPeaks(peaks []peak, spectrum block, cumulationSize int, noiseFloor float32) ([]peak, float32) {
+	const peakThreshold float32 = 1.3
 	peaks = peaks[:0]
 
-	var max float32 = 0
-	var min float32 = math.MaxFloat32
-	for i, v := range spectrum {
-		if (i <= edgeWidth) || (i > spectrum.size()-edgeWidth) {
-			continue
-		}
-		if max < v {
-			max = v
-		}
-		if min > v {
-			min = v
-		}
-	}
-	delta := max - min
-	if delta < silenceThreshold {
-		return peaks, 0
-	}
-
-	threshold := peakThreshold*delta + min
+	threshold := peakThreshold * noiseFloor
 	var currentPeak *peak
 	for i, v := range spectrum {
-		if currentPeak == nil && v > threshold {
-			currentPeak = &peak{from: i, max: v, maxBin: i}
-		} else if currentPeak != nil && v <= threshold {
+		value := v / float32(cumulationSize)
+		if currentPeak == nil && value > threshold {
+			currentPeak = &peak{from: i, max: value, maxBin: i}
+		} else if currentPeak != nil && value <= threshold {
 			currentPeak.to = i - 1
 			currentPeak.fromFrequency = h.binToFrequency(currentPeak.from, spectrum.size(), binFrom)
 			currentPeak.toFrequency = h.binToFrequency(currentPeak.to, spectrum.size(), binTo)
 			peaks = append(peaks, *currentPeak)
 			currentPeak = nil
-		} else if currentPeak != nil && currentPeak.max < v {
-			currentPeak.max = v
+		} else if currentPeak != nil && currentPeak.max < value {
+			currentPeak.max = value
 			currentPeak.maxBin = i
 		}
 	}
