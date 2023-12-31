@@ -26,6 +26,9 @@ See also:
 const (
 	defaultWPM     = 20
 	maxSymbolCount = 8
+
+	minDitTime ticks = 2.5
+	maxDitTime ticks = 6.0
 )
 
 type Tracer interface {
@@ -199,7 +202,7 @@ func (d *Decoder) Tick(state bool) {
 		if state {
 			stateInt = 1
 		}
-		d.tracer.Trace("%f;%f;%d\n", d.ditTime, 3.0, stateInt) // TRACING
+		d.tracer.Trace("%f;%f;%d\n", d.ditTime, 3.0, stateInt) // <------------------------------------------------------ TRACING
 	}
 
 	if d.decoding && currentDuration > upperBound {
@@ -242,11 +245,15 @@ func (d *Decoder) onFallingEdge(onDuration ticks) {
 	onRatio := float64(onDuration) / float64(d.ditTime)
 	// fmt.Printf("\non for %v (%.3f) => ", onDuration, onRatio)
 
-	if (onRatio > 0.25 && onRatio < 2) || d.ditTime == 0 {
-		d.ditTime = max(2.5, (onDuration+d.ditTime+d.ditTime)/3)
-	}
-	if onRatio > 7 {
-		d.ditTime *= 2
+	switch {
+	case onDuration < minDitTime:
+		// ignore
+	case (onRatio < 2), d.ditTime == 0:
+		d.setDitTime((onDuration + d.ditTime + d.ditTime) / 3)
+	case onRatio > 5:
+		d.setDitTime(d.ditTime * 1.5)
+	case onRatio > 7:
+		d.setDitTime(d.ditTime * 2)
 	}
 
 	if onRatio < 2 && onRatio > 0.6 {
@@ -258,6 +265,10 @@ func (d *Decoder) onFallingEdge(onDuration ticks) {
 		// fmt.Print("-") // TODO REMOVE THIS
 		d.wpm = (d.wpm + d.ditToWPM(d.ditTime)) / 2.0
 	}
+}
+
+func (d *Decoder) setDitTime(value ticks) {
+	d.ditTime = max(minDitTime, min(value, maxDitTime))
 }
 
 func ditToWPM(dit time.Duration) float64 {
