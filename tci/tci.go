@@ -91,6 +91,7 @@ func (p *Process) onConnected(connected bool) {
 		return
 	}
 
+	p.client.SetIQSampleRate(48000)
 	p.client.StartIQ(0)
 }
 
