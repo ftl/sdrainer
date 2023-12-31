@@ -2,8 +2,8 @@ github.com/cpuguy83/go-md2man/v2 v2.0.3/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46t
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/ftl/digimodes v0.0.0-20200502133046-0a4117101b05 h1:BC3Cnahi92oJtqO2V/WbteNABmFG82utD1HLsu5sBGA=
-github.com/ftl/digimodes v0.0.0-20200502133046-0a4117101b05/go.mod h1:ZtWpsmBg36VPXZ/TdS3xG99SfmQ6ym4jOpaZyGlKQvk=
+github.com/ftl/digimodes v0.0.0-20231231093053-9fec5594f98f h1:0DH21nFgkyghTFoWIXa3ZzyWomBn9K8RwAeJT6P1niY=
+github.com/ftl/digimodes v0.0.0-20231231093053-9fec5594f98f/go.mod h1:ZtWpsmBg36VPXZ/TdS3xG99SfmQ6ym4jOpaZyGlKQvk=
 github.com/ftl/patrix v0.0.0-20231216163204-d2f8d83f211b h1:AQueJK4PntymzZk8Angx6eanwJzqoe/68PZivJEqK+4=
 github.com/ftl/patrix v0.0.0-20231216163204-d2f8d83f211b/go.mod h1:KfQXeQeC7p1bJ7RlM4A/FLZJfgmtlxC3ftA2NxpmCSs=
 github.com/ftl/tci v0.3.2 h1:1Qdgprldiv7/DQvuK96OHMVqb+SDunqbxTHDcWsE5Tk=

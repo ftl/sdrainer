@@ -9,7 +9,7 @@ go 1.21
 // replace github.com/ftl/tci => ../tci
 
 require (
-	github.com/ftl/digimodes v0.0.0-20200502133046-0a4117101b05
+	github.com/ftl/digimodes v0.0.0-20231231093053-9fec5594f98f
 	github.com/ftl/patrix v0.0.0-20231216163204-d2f8d83f211b
 	github.com/ftl/tci v0.3.2
 	github.com/jfreymuth/pulse v0.1.0
