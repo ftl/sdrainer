@@ -66,6 +66,7 @@ func (h *trxHandler) SetCenterFrequency(frequency int) {
 		}
 		if h.frequencyMapping != nil {
 			h.frequencyMapping.SetCenterFrequency(frequency)
+			log.Printf("frequency mapping: %s", h.frequencyMapping)
 		}
 	})
 }
@@ -99,6 +100,7 @@ func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
 		h.blockSize = len(data) / 2
 		h.decoder = newDecoder(int(sampleRate), len(data))
 		h.frequencyMapping = dsp.NewFrequencyMapping(h.sampleRate, h.blockSize, h.centerFrequency)
+		log.Printf("frequency mapping: %s", h.frequencyMapping)
 
 		// TRACING
 		h.decoder.tracer = h.tracer
@@ -197,8 +199,8 @@ func (h *trxHandler) run() {
 					peak := peaks[peakIndex]
 
 					peak.max = peak.max / float32(cumulationSize)
-					peak.from = max(0, peak.maxBin-1)
-					peak.to = min(peak.maxBin+1, h.blockSize-1)
+					peak.from = max(0, peak.maxBin)
+					peak.to = min(peak.maxBin, h.blockSize-1)
 					peak.fromFrequency = h.binToFrequency(peak.from, dsp.BinFrom)
 					peak.toFrequency = h.binToFrequency(peak.to, dsp.BinTo)
 

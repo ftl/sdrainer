@@ -116,6 +116,10 @@ func NewFrequencyMapping[F Number](sampleRate int, blockSize int, centerFrequenc
 	return result
 }
 
+func (m *FrequencyMapping[F]) String() string {
+	return fmt.Sprintf("[%v - %v - %v]", m.fromFrequency, m.centerFrequency, m.BinToFrequency(m.blockSize-1, BinTo))
+}
+
 func (m *FrequencyMapping[F]) SetCenterFrequency(frequency F) {
 	m.centerFrequency = int(frequency)
 	m.fromFrequency = m.centerFrequency - m.centerBin*m.binSize
