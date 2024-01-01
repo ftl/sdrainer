@@ -24,10 +24,11 @@ type trxHandler struct {
 	vfoOffset       int
 	blockSize       int
 
-	in      chan []float32
-	op      chan func()
-	fft     *dsp.FFT[float32]
-	decoder *decoder
+	in               chan []float32
+	op               chan func()
+	fft              *dsp.FFT[float32]
+	frequencyMapping *dsp.FrequencyMapping[int]
+	decoder          *decoder
 
 	tracer tracer
 }
@@ -63,6 +64,9 @@ func (h *trxHandler) SetCenterFrequency(frequency int) {
 		if h.decoder != nil {
 			h.decoder.reset()
 		}
+		if h.frequencyMapping != nil {
+			h.frequencyMapping.SetCenterFrequency(frequency)
+		}
 	})
 }
 
@@ -94,6 +98,9 @@ func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
 		h.sampleRate = int(sampleRate)
 		h.blockSize = len(data) / 2
 		h.decoder = newDecoder(int(sampleRate), len(data))
+		h.frequencyMapping = dsp.NewFrequencyMapping(h.sampleRate, h.blockSize, h.centerFrequency)
+
+		// TRACING
 		h.decoder.tracer = h.tracer
 		h.decoder.decoder.SetTracer(h.tracer)
 	} else if h.sampleRate != int(sampleRate) {
@@ -192,8 +199,8 @@ func (h *trxHandler) run() {
 					peak.max = peak.max / float32(cumulationSize)
 					peak.from = max(0, peak.maxBin-1)
 					peak.to = min(peak.maxBin+1, h.blockSize-1)
-					peak.fromFrequency = h.binToFrequency(peak.from, h.blockSize, binFrom)
-					peak.toFrequency = h.binToFrequency(peak.to, h.blockSize, binTo)
+					peak.fromFrequency = h.binToFrequency(peak.from, dsp.BinFrom)
+					peak.toFrequency = h.binToFrequency(peak.to, dsp.BinTo)
 
 					h.decoder.Attach(&peak)
 					h.process.doAsync(func() {
@@ -248,8 +255,8 @@ func (h *trxHandler) detectPeaks(peaks []peak, spectrum block, cumulationSize in
 			currentPeak = &peak{from: i, max: value, maxBin: i}
 		} else if currentPeak != nil && value <= threshold {
 			currentPeak.to = i - 1
-			currentPeak.fromFrequency = h.binToFrequency(currentPeak.from, spectrum.size(), binFrom)
-			currentPeak.toFrequency = h.binToFrequency(currentPeak.to, spectrum.size(), binTo)
+			currentPeak.fromFrequency = h.binToFrequency(currentPeak.from, dsp.BinFrom)
+			currentPeak.toFrequency = h.binToFrequency(currentPeak.to, dsp.BinTo)
 			peaks = append(peaks, *currentPeak)
 			currentPeak = nil
 		} else if currentPeak != nil && currentPeak.max < value {
@@ -266,26 +273,19 @@ func (h *trxHandler) detectPeaks(peaks []peak, spectrum block, cumulationSize in
 	return peaks, threshold
 }
 
-func (h *trxHandler) binToFrequency(bin int, blockSize int, edge binEdge) int {
-	binSize := h.sampleRate / blockSize
-	centerBin := blockSize / 2
-
-	return (binSize * (bin - centerBin)) + int(float32(binSize)*float32(edge)) + h.centerFrequency
+func (h *trxHandler) binToFrequency(bin int, location dsp.BinLocation) int {
+	if h.frequencyMapping == nil {
+		return h.centerFrequency
+	}
+	return h.frequencyMapping.BinToFrequency(bin, location)
 }
 
 func (h *trxHandler) frequencyToBin(frequency int) int {
-	binSize := h.sampleRate / h.blockSize
-
-	return (frequency-h.centerFrequency)/binSize + (h.blockSize / 2)
+	if h.frequencyMapping == nil {
+		return 0
+	}
+	return h.frequencyMapping.FrequencyToBin(frequency)
 }
-
-type binEdge float32
-
-const (
-	binFrom   binEdge = 0.0
-	binCenter binEdge = 0.5
-	binTo     binEdge = 1.0
-)
 
 type block []float32
 

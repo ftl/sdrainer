@@ -63,9 +63,9 @@ func binToSpectrumIndex(bin int, blockSize int) int {
 }
 
 func (f *FFT[T]) setSamplesFromIQ(iqSamples []T) {
-	samplesSize := len(iqSamples) / 2
-	if len(f.samples) != samplesSize {
-		f.samples = make([]complex128, samplesSize)
+	blockSize := len(iqSamples) / 2
+	if len(f.samples) != blockSize {
+		f.samples = make([]complex128, blockSize)
 	}
 	for i := range f.samples {
 		iSample := float64(iqSamples[i*2])
@@ -84,4 +84,55 @@ func Magnitude2dBm[T Number](fftValue complex128, blockSize int) T {
 
 func PSDValue2dBm[T Number](psdValue T, blockSize int) T {
 	return T(10.0 * math.Log10(20.0*float64(psdValue)/math.Pow(float64(blockSize), 2)))
+}
+
+type BinLocation int
+
+const (
+	BinFrom   BinLocation = 0
+	BinCenter BinLocation = 2
+	BinTo     BinLocation = 1
+)
+
+type FrequencyMapping[F Number] struct {
+	sampleRate int
+	blockSize  int
+	binSize    int
+	centerBin  int
+
+	centerFrequency int
+	fromFrequency   int
+}
+
+func NewFrequencyMapping[F Number](sampleRate int, blockSize int, centerFrequency F) *FrequencyMapping[F] {
+	result := &FrequencyMapping[F]{
+		sampleRate: sampleRate,
+		blockSize:  blockSize,
+		binSize:    sampleRate / blockSize,
+		centerBin:  blockSize / 2,
+	}
+	result.SetCenterFrequency(centerFrequency)
+
+	return result
+}
+
+func (m *FrequencyMapping[F]) SetCenterFrequency(frequency F) {
+	m.centerFrequency = int(frequency)
+	m.fromFrequency = m.centerFrequency - m.centerBin*m.binSize
+}
+
+func (m *FrequencyMapping[F]) BinToFrequency(bin int, location BinLocation) F {
+	var locationDelta int
+	if location != 0 {
+		locationDelta = int(float64(m.binSize)*(1.0/float64(location))) - 1
+	} else {
+		locationDelta = 0
+	}
+
+	return F(m.fromFrequency + bin*m.binSize + locationDelta)
+}
+
+func (m *FrequencyMapping[F]) FrequencyToBin(frequency F) int {
+	bin := (int(frequency) - m.fromFrequency) / m.binSize
+	return max(0, min(bin, m.blockSize-1))
 }
