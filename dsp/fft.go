@@ -13,8 +13,7 @@ type Number interface {
 }
 
 type FFT[T Number] struct {
-	samples     []complex128
-	realSamples []float64
+	samples []complex128
 }
 
 func NewFFT[T Number]() *FFT[T] {
