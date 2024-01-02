@@ -16,6 +16,13 @@ const (
 	timeout         = 10 * time.Second
 )
 
+type Mode string
+
+const (
+	VFOMode        Mode = "vfo"
+	RandomPeakMode Mode = "random"
+)
+
 type Process struct {
 	client   *tci.Client
 	listener *tciListener
@@ -27,7 +34,7 @@ type Process struct {
 	closed  chan struct{}
 }
 
-func New(host string, trx int, trace bool) (*Process, error) {
+func New(host string, trx int, mode Mode, traceTCI bool) (*Process, error) {
 	tcpHost, err := parseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)
@@ -36,7 +43,7 @@ func New(host string, trx int, trace bool) (*Process, error) {
 		tcpHost.Port = defaultPort
 	}
 
-	client := tci.KeepOpen(tcpHost, timeout, trace)
+	client := tci.KeepOpen(tcpHost, timeout, traceTCI)
 
 	result := &Process{
 		client:  client,
@@ -46,7 +53,7 @@ func New(host string, trx int, trace bool) (*Process, error) {
 		closed:  make(chan struct{}),
 	}
 	result.listener = &tciListener{process: result, trx: result.trx}
-	result.receiver = NewReceiver(result, result.trx) // TODO add support for multiple receivers
+	result.receiver = NewReceiver(result, result.trx, mode)
 	go result.run()
 
 	client.Notify(result.listener)

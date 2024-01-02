@@ -23,6 +23,7 @@ type tracer interface {
 type Receiver struct {
 	process         *Process
 	trx             int
+	mode            Mode
 	sampleRate      int
 	centerFrequency int
 	vfoOffset       int
@@ -37,10 +38,11 @@ type Receiver struct {
 	tracer tracer
 }
 
-func NewReceiver(process *Process, trx int) *Receiver {
+func NewReceiver(process *Process, trx int, mode Mode) *Receiver {
 	result := &Receiver{
 		process: process,
 		trx:     trx,
+		mode:    mode,
 		fft:     dsp.NewFFT[float32](),
 
 		// tracer: NewFileTracer("trace.csv"),
@@ -112,19 +114,20 @@ func (h *Receiver) SetVFOOffset(vfo tci.VFO, offset int) {
 	}
 	h.do(func() {
 		h.vfoOffset = offset
-		if true || h.blockSize == 0 { // TODO REMOVE INACTIVATION
+		if h.blockSize == 0 {
 			return
 		}
-		freq := h.vfoOffset + h.centerFrequency
-		bin := h.frequencyToBin(freq)
-		h.decoder.Attach(&peak{
-			from:          max(0, bin-1),
-			to:            min(bin+1, h.blockSize-1),
-			fromFrequency: freq,
-			toFrequency:   freq,
-			max:           0.1,
-		})
-
+		if h.mode == VFOMode {
+			freq := h.vfoOffset + h.centerFrequency
+			bin := h.frequencyToBin(freq)
+			h.decoder.Attach(&peak{
+				from:          max(0, bin-1),
+				to:            min(bin+1, h.blockSize-1),
+				fromFrequency: freq,
+				toFrequency:   freq,
+				max:           0.1,
+			})
+		}
 	})
 	// h.tracer.Start() // TODO remove tracing
 }
@@ -170,7 +173,6 @@ func (h *Receiver) run() {
 	peakTicker := time.NewTicker(5 * time.Second)
 	defer peakTicker.Stop()
 
-	traced := false
 	cycle := 0
 	for {
 		cycle++
@@ -205,7 +207,7 @@ func (h *Receiver) run() {
 
 				h.decoder.Tick(maxValue, noiseFloor)
 
-				if true && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
+				if h.mode == RandomPeakMode && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
 					h.decoder.Detach()
 					h.process.doAsync(func() {
 						h.process.hideDecode()
@@ -232,7 +234,7 @@ func (h *Receiver) run() {
 				// 	h.tracer.Stop()
 				// }
 
-				if true && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() { // TODO REMOVE INACTIVATION
+				if h.mode == RandomPeakMode && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() {
 					peakIndex := rand.Intn(len(peaks))
 					peak := peaks[peakIndex]
 
@@ -247,10 +249,7 @@ func (h *Receiver) run() {
 						h.process.showDecode(peak)
 					})
 
-					if !traced {
-						// traced = true
-						// h.tracer.Start() // TODO remove tracing
-					}
+					// h.tracer.Start() // TODO remove tracing
 				}
 
 				clear(cumulation)
