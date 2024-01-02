@@ -10,13 +10,17 @@ import (
 	tci "github.com/ftl/tci/client"
 )
 
+const (
+	iqBufferSize = 100
+)
+
 type tracer interface {
 	Start()
 	Trace(string, ...any)
 	Stop()
 }
 
-type trxHandler struct {
+type Receiver struct {
 	process         *Process
 	trx             int
 	sampleRate      int
@@ -33,32 +37,55 @@ type trxHandler struct {
 	tracer tracer
 }
 
-func newTRXHandler(process *Process, trx int) *trxHandler {
-	result := &trxHandler{
+func NewReceiver(process *Process, trx int) *Receiver {
+	result := &Receiver{
 		process: process,
 		trx:     trx,
-
-		in:  make(chan []float32, 100),
-		op:  make(chan func()),
-		fft: dsp.NewFFT[float32](),
+		fft:     dsp.NewFFT[float32](),
 
 		// tracer: NewFileTracer("trace.csv"),
 		tracer: NewUDPTracer("localhost:3536"),
 	}
-	go result.run()
 	return result
 }
 
-func (h *trxHandler) Close() {
-	close(h.in)
+func (h *Receiver) Start() {
+	if h.in != nil {
+		return
+	}
+
+	h.in = make(chan []float32, iqBufferSize)
+	h.op = make(chan func())
+	h.sampleRate = 0
+	h.blockSize = 0
+	h.decoder = nil
+	h.frequencyMapping = nil
+
+	go h.run()
+}
+
+func (h *Receiver) Stop() {
+	if h.in == nil {
+		return
+	}
+
 	h.tracer.Stop()
+
+	close(h.in)
+	close(h.op)
+	h.in = nil
+	h.op = nil
 }
 
-func (h *trxHandler) do(f func()) {
-	h.op <- f
+func (h *Receiver) do(f func()) {
+	if h.op == nil {
+		f()
+	} else {
+		h.op <- f
+	}
 }
 
-func (h *trxHandler) SetCenterFrequency(frequency int) {
+func (h *Receiver) SetCenterFrequency(frequency int) {
 	h.do(func() {
 		h.centerFrequency = frequency
 		if h.decoder != nil {
@@ -71,7 +98,15 @@ func (h *trxHandler) SetCenterFrequency(frequency int) {
 	})
 }
 
-func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
+func (h *Receiver) CenterFrequency() int {
+	result := make(chan int)
+	h.do(func() {
+		result <- h.centerFrequency
+	})
+	return <-result
+}
+
+func (h *Receiver) SetVFOOffset(vfo tci.VFO, offset int) {
 	if vfo == tci.VFOB {
 		return
 	}
@@ -83,8 +118,8 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 		freq := h.vfoOffset + h.centerFrequency
 		bin := h.frequencyToBin(freq)
 		h.decoder.Attach(&peak{
-			from:          bin - 1,
-			to:            bin + 1,
+			from:          max(0, bin-1),
+			to:            min(bin+1, h.blockSize-1),
 			fromFrequency: freq,
 			toFrequency:   freq,
 			max:           0.1,
@@ -94,7 +129,10 @@ func (h *trxHandler) SetVFOOffset(vfo tci.VFO, offset int) {
 	// h.tracer.Start() // TODO remove tracing
 }
 
-func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
+func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
+	if h.in == nil {
+		return
+	}
 	if h.sampleRate == 0 {
 		h.sampleRate = int(sampleRate)
 		h.blockSize = len(data) / 2
@@ -120,7 +158,7 @@ func (h *trxHandler) IQData(sampleRate tci.IQSampleRate, data []float32) {
 	}
 }
 
-func (h *trxHandler) run() {
+func (h *Receiver) run() {
 	var spectrum block
 	var psd block
 	var cumulation block
@@ -199,8 +237,8 @@ func (h *trxHandler) run() {
 					peak := peaks[peakIndex]
 
 					peak.max = peak.max / float32(cumulationSize)
-					peak.from = max(0, peak.maxBin)
-					peak.to = min(peak.maxBin, h.blockSize-1)
+					peak.from = max(0, peak.maxBin-1)
+					peak.to = min(peak.maxBin+1, h.blockSize-1)
 					peak.fromFrequency = h.binToFrequency(peak.from, dsp.BinFrom)
 					peak.toFrequency = h.binToFrequency(peak.to, dsp.BinTo)
 
@@ -222,7 +260,7 @@ func (h *trxHandler) run() {
 	}
 }
 
-func (h *trxHandler) findNoiseFloor(psd block) float32 {
+func (h *Receiver) findNoiseFloor(psd block) float32 {
 	const edgeWidth = 70
 
 	windowSize := len(psd) / 10
@@ -245,7 +283,7 @@ func (h *trxHandler) findNoiseFloor(psd block) float32 {
 	return dsp.PSDValue2dBm(minValue, h.blockSize) + 120
 }
 
-func (h *trxHandler) detectPeaks(peaks []peak, spectrum block, cumulationSize int, noiseFloor float32) ([]peak, float32) {
+func (h *Receiver) detectPeaks(peaks []peak, spectrum block, cumulationSize int, noiseFloor float32) ([]peak, float32) {
 	const peakThreshold float32 = 1.3
 	peaks = peaks[:0]
 
@@ -275,14 +313,14 @@ func (h *trxHandler) detectPeaks(peaks []peak, spectrum block, cumulationSize in
 	return peaks, threshold
 }
 
-func (h *trxHandler) binToFrequency(bin int, location dsp.BinLocation) int {
+func (h *Receiver) binToFrequency(bin int, location dsp.BinLocation) int {
 	if h.frequencyMapping == nil {
 		return h.centerFrequency
 	}
 	return h.frequencyMapping.BinToFrequency(bin, location)
 }
 
-func (h *trxHandler) frequencyToBin(frequency int) int {
+func (h *Receiver) frequencyToBin(frequency int) int {
 	if h.frequencyMapping == nil {
 		return 0
 	}

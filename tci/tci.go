@@ -19,14 +19,15 @@ const (
 type Process struct {
 	client   *tci.Client
 	listener *tciListener
-	trx      []*trxHandler
+	trx      int
+	receiver *Receiver
 
 	opAsync chan func()
 	close   chan struct{}
 	closed  chan struct{}
 }
 
-func New(host string, trace bool) (*Process, error) {
+func New(host string, trx int, trace bool) (*Process, error) {
 	tcpHost, err := parseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)
@@ -39,16 +40,13 @@ func New(host string, trace bool) (*Process, error) {
 
 	result := &Process{
 		client:  client,
+		trx:     trx,
 		opAsync: make(chan func(), 10),
 		close:   make(chan struct{}),
 		closed:  make(chan struct{}),
 	}
-	result.listener = &tciListener{process: result}
-	result.trx = []*trxHandler{
-		newTRXHandler(result, 0),
-		newTRXHandler(result, 1),
-	}
-	result.trx[1].Close() // TODO add full support for the second TRX
+	result.listener = &tciListener{process: result, trx: result.trx}
+	result.receiver = NewReceiver(result, result.trx) // TODO add support for multiple receivers
 	go result.run()
 
 	client.Notify(result.listener)
@@ -72,10 +70,8 @@ func (p *Process) run() {
 		case op := <-p.opAsync:
 			op()
 		case <-p.close:
-			p.client.StopIQ(0)
-
-			p.trx[0].Close()
-			// p.trx[1].Close() // TODO add full support for the second TRX
+			p.client.StopIQ(p.trx)
+			p.receiver.Stop()
 			close(p.closed)
 			return
 		}
@@ -91,15 +87,21 @@ func (p *Process) onConnected(connected bool) {
 		return
 	}
 
+	p.receiver.Start()
 	p.client.SetIQSampleRate(48000)
-	p.client.StartIQ(0)
+	p.client.StartIQ(p.trx)
 }
 
-var peakColor tci.ARGB = tci.NewARGB(255, 255, 0, 0)
-var decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
+const (
+	decodeLabel = "DECODE"
+)
+
+var (
+	peakColor   tci.ARGB = tci.NewARGB(255, 255, 0, 0)
+	decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
+)
 
 func (p *Process) showPeaks(peaks []peak) {
-	// p.client.ClearSpots() // TODO this works only if there is only one TRX active
 	for _, peak := range peaks {
 		label := fmt.Sprintf("%d w%d", peak.CenterFrequency(), peak.Width())
 		p.client.AddSpot(label, tci.ModeCW, peak.CenterFrequency(), peakColor, "SDRainer")
@@ -107,19 +109,19 @@ func (p *Process) showPeaks(peaks []peak) {
 }
 
 func (p *Process) showDecode(peak peak) {
-	label := "DECODE"
-	p.client.DeleteSpot(label)
-	p.client.AddSpot(label, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
-	p.client.SetIF(0, tci.VFOA, peak.CenterFrequency()-int(p.trx[0].centerFrequency))
+	p.client.DeleteSpot(decodeLabel)
+	p.client.AddSpot(decodeLabel, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
+	offset := peak.CenterFrequency() - p.receiver.CenterFrequency()
+	p.client.SetIF(p.trx, tci.VFOA, offset)
 }
 
 func (p *Process) hideDecode() {
-	label := "DECODE"
-	p.client.DeleteSpot(label)
+	p.client.DeleteSpot(decodeLabel)
 }
 
 type tciListener struct {
 	process *Process
+	trx     int
 }
 
 func (l *tciListener) Connected(connected bool) {
@@ -127,20 +129,29 @@ func (l *tciListener) Connected(connected bool) {
 }
 
 func (l *tciListener) SetDDS(trx int, frequency int) {
-	l.process.trx[trx].SetCenterFrequency(frequency)
+	if trx != l.trx {
+		return
+	}
+	l.process.receiver.SetCenterFrequency(frequency)
 }
 
 func (l *tciListener) SetIF(trx int, vfo tci.VFO, frequency int) {
-	l.process.trx[trx].SetVFOOffset(vfo, frequency)
+	if trx != l.trx {
+		return
+	}
+	l.process.receiver.SetVFOOffset(vfo, frequency)
 }
 
 func (l *tciListener) IQData(trx int, sampleRate tci.IQSampleRate, data []float32) {
+	if trx != l.trx {
+		return
+	}
 	const partCount = 4
 	partLen := len(data) / partCount
 	for i := 0; i < partCount; i++ {
 		begin := i * partLen
 		end := begin + partLen
-		l.process.trx[trx].IQData(tci.IQSampleRate(sampleRate), data[begin:end])
+		l.process.receiver.IQData(tci.IQSampleRate(sampleRate), data[begin:end])
 	}
 }
 
