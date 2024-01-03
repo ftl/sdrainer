@@ -18,8 +18,9 @@ var tciFlags = struct {
 	threshold int
 	debounce  int
 
-	traceTCI     bool
-	traceContext string
+	traceTCI         bool
+	traceContext     string
+	traceDestination string
 }{}
 
 var tciCmd = &cobra.Command{
@@ -39,6 +40,7 @@ func init() {
 
 	tciCmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
 	tciCmd.Flags().StringVar(&tciFlags.traceContext, "trace", "", "spectrum | signal | cw")
+	tciCmd.Flags().StringVar(&tciFlags.traceDestination, "trace_to", "", "file:<filename> | udp:<host:port>")
 }
 
 func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
@@ -46,10 +48,37 @@ func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// process.SetTracer(NewFileTracer(tciFlags.traceContext, "trace.csv"))
-	process.SetTracer(trace.NewUDPTracer(tciFlags.traceContext, "localhost:3536"))
 	process.SetThreshold(tciFlags.threshold)
+
+	tracer, ok := createTracer()
+	if ok {
+		log.Printf("set tracer %#v", tracer)
+		process.SetTracer(tracer)
+	}
 
 	<-ctx.Done()
 	process.Close()
+}
+
+func createTracer() (trace.Tracer, bool) {
+	if tciFlags.traceDestination == "" {
+		log.Printf("no destination")
+		return nil, false
+	}
+
+	protocol, destination, found := strings.Cut(tciFlags.traceDestination, ":")
+	if !found {
+		log.Printf("wrong parts %v", tciFlags.traceDestination)
+		return nil, false
+	}
+
+	switch strings.ToLower(protocol) {
+	case "file":
+		return trace.NewFileTracer(tciFlags.traceContext, destination), true
+	case "udp":
+		return trace.NewUDPTracer(tciFlags.traceContext, destination), true
+	default:
+		log.Printf("wrong protocol %v", protocol)
+		return nil, false
+	}
 }
