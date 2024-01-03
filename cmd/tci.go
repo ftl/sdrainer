@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ftl/sdrainer/tci"
+	"github.com/ftl/sdrainer/trace"
 )
 
 var tciFlags = struct {
@@ -16,7 +17,9 @@ var tciFlags = struct {
 	mode      string
 	threshold int
 	debounce  int
-	trace     bool
+
+	traceTCI     bool
+	traceContext string
 }{}
 
 var tciCmd = &cobra.Command{
@@ -34,16 +37,17 @@ func init() {
 	tciCmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
 	tciCmd.Flags().IntVar(&tciFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal")
 
-	tciCmd.Flags().BoolVar(&tciFlags.trace, "trace", false, "trace the TCI communication on the console")
+	tciCmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
+	tciCmd.Flags().StringVar(&tciFlags.traceContext, "trace", "", "spectrum | signal | cw")
 }
 
 func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
-	process, err := tci.New(tciFlags.host, tciFlags.trx, tci.Mode(strings.ToLower(tciFlags.mode)), tciFlags.trace)
+	process, err := tci.New(tciFlags.host, tciFlags.trx, tci.Mode(strings.ToLower(tciFlags.mode)), tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// process.SetTracer(NewFileTracer("trace.csv"))
-	// process.SetTracer(NewUDPTracer("localhost:3536"))
+	// process.SetTracer(NewFileTracer(tciFlags.traceContext, "trace.csv"))
+	process.SetTracer(trace.NewUDPTracer(tciFlags.traceContext, "localhost:3536"))
 	process.SetThreshold(tciFlags.threshold)
 
 	<-ctx.Done()

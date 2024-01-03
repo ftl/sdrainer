@@ -12,6 +12,8 @@ import (
 )
 
 const (
+	traceSpectrum = "spectrum"
+
 	iqBufferSize = 100
 
 	defaultPeakThreshold float32 = 15
@@ -241,13 +243,13 @@ func (h *Receiver) run() {
 				peaks, threshold = h.detectPeaks(peaks, cumulation, cumulationSize, noiseFloor)
 				_ = threshold
 
-				// if h.tracer != nil {
-				// 	peakFrame := peaksToPeakFrame(peaks, h.blockSize)
-				// 	for i, v := range cumulation {
-				// 		h.tracer.Trace("%f;%f;%f;%f\n", v/float32(cumulationSize), threshold, noiseFloor, peakFrame[i])
-				// 	}
-				// 	h.tracer.Stop()
-				// }
+				if h.tracer.Context() == traceSpectrum {
+					peakFrame := peaksToPeakFrame(peaks, h.blockSize)
+					for i, v := range cumulation {
+						h.tracer.Trace(traceSpectrum, "%f;%f;%f;%f\n", v/float32(cumulationSize), threshold, noiseFloor, peakFrame[i])
+					}
+					h.tracer.Stop()
+				}
 
 				if h.mode == RandomPeakMode && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() {
 					peakIndex := rand.Intn(len(peaks))

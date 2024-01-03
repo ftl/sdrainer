@@ -9,26 +9,34 @@ import (
 )
 
 type Tracer interface {
+	Context() string
 	Start()
-	Trace(format string, args ...any)
+	Trace(context string, format string, args ...any)
 	Stop()
 }
 
 type NoTracer struct{}
 
-func (t *NoTracer) Start()               {}
-func (t *NoTracer) Trace(string, ...any) {}
-func (t *NoTracer) Stop()                {}
+func (t *NoTracer) Context() string              { return "" }
+func (t *NoTracer) Start()                       {}
+func (t *NoTracer) Trace(string, string, ...any) {}
+func (t *NoTracer) Stop()                        {}
 
 type FileTracer struct {
+	context  string
 	filename string
 	out      io.WriteCloser
 }
 
-func NewFileTracer(filename string) *FileTracer {
+func NewFileTracer(context string, filename string) *FileTracer {
 	return &FileTracer{
+		context:  context,
 		filename: filename,
 	}
+}
+
+func (t *FileTracer) Context() string {
+	return t.context
 }
 
 func (t *FileTracer) Start() {
@@ -44,8 +52,11 @@ func (t *FileTracer) Start() {
 	}
 }
 
-func (t *FileTracer) Trace(format string, args ...any) {
+func (t *FileTracer) Trace(context string, format string, args ...any) {
 	if t.out == nil {
+		return
+	}
+	if context != t.context {
 		return
 	}
 
@@ -62,17 +73,25 @@ func (t *FileTracer) Stop() {
 }
 
 type UDPTracer struct {
-	addr *net.UDPAddr
-	conn *net.UDPConn
+	context string
+	addr    *net.UDPAddr
+	conn    *net.UDPConn
 }
 
-func NewUDPTracer(destination string) *UDPTracer {
+func NewUDPTracer(context string, destination string) *UDPTracer {
 	addr, err := net.ResolveUDPAddr("udp", destination)
 	if err != nil {
 		log.Printf("cannot parse UDP destination: %v", err)
 		return &UDPTracer{addr: nil}
 	}
-	return &UDPTracer{addr: addr}
+	return &UDPTracer{
+		context: context,
+		addr:    addr,
+	}
+}
+
+func (t *UDPTracer) Context() string {
+	return t.context
 }
 
 func (t *UDPTracer) Start() {
@@ -88,8 +107,11 @@ func (t *UDPTracer) Start() {
 	}
 }
 
-func (t *UDPTracer) Trace(format string, args ...any) {
+func (t *UDPTracer) Trace(context string, format string, args ...any) {
 	if t.conn == nil {
+		return
+	}
+	if context != t.context {
 		return
 	}
 

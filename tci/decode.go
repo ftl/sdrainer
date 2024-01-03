@@ -10,6 +10,8 @@ import (
 )
 
 const (
+	traceSignal = "signal"
+
 	silenceTimeout = 400
 
 	defaultSignalThreshold float32 = 15
@@ -101,7 +103,7 @@ func (d *decoder) Tick(value float32, noiseFloor float32) {
 		stateInt = 80
 	}
 
-	// d.tracer.Trace("%f;%f;%f;%f\n", noiseFloor, threshold, value, stateInt) // TODO remove tracing
+	d.tracer.Trace(traceSignal, "%f;%f;%f;%f\n", noiseFloor, threshold, value, stateInt) // TODO remove tracing
 
 	if debounced {
 		d.lowTicks = 0

@@ -24,6 +24,8 @@ See also:
 */
 
 const (
+	traceCW = "cw"
+
 	defaultWPM     = 20
 	maxSymbolCount = 8
 
@@ -32,7 +34,7 @@ const (
 )
 
 type Tracer interface {
-	Trace(string, ...any)
+	Trace(string, string, ...any)
 }
 
 var noSymbol = cw.Symbol{}
@@ -202,7 +204,7 @@ func (d *Decoder) Tick(state bool) {
 		if state {
 			stateInt = 1
 		}
-		d.tracer.Trace("%f;%f;%d\n", d.ditTime, 3.0, stateInt) // <------------------------------------------------------ TRACING
+		d.tracer.Trace(traceCW, "%f;%f;%d\n", d.ditTime, 3.0, stateInt)
 	}
 
 	if d.decoding && currentDuration > upperBound {
