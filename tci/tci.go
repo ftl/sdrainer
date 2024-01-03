@@ -8,6 +8,8 @@ import (
 	"time"
 
 	tci "github.com/ftl/tci/client"
+
+	"github.com/ftl/sdrainer/trace"
 )
 
 const (
@@ -87,6 +89,10 @@ func (p *Process) run() {
 
 func (p *Process) doAsync(f func()) {
 	p.opAsync <- f
+}
+
+func (p *Process) SetTracer(tracer trace.Tracer) {
+	p.receiver.SetTracer(tracer)
 }
 
 func (p *Process) SetThreshold(threshold int) {

@@ -42,6 +42,8 @@ func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// process.SetTracer(NewFileTracer("trace.csv"))
+	// process.SetTracer(NewUDPTracer("localhost:3536"))
 	process.SetThreshold(tciFlags.threshold)
 
 	<-ctx.Done()

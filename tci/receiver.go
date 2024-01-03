@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ftl/sdrainer/dsp"
+	"github.com/ftl/sdrainer/trace"
 	tci "github.com/ftl/tci/client"
 )
 
@@ -15,12 +16,6 @@ const (
 
 	defaultPeakThreshold float32 = 15
 )
-
-type tracer interface {
-	Start()
-	Trace(string, ...any)
-	Stop()
-}
 
 type Receiver struct {
 	process         *Process
@@ -38,7 +33,7 @@ type Receiver struct {
 	frequencyMapping *dsp.FrequencyMapping[int]
 	decoder          *decoder
 
-	tracer tracer
+	tracer trace.Tracer
 }
 
 func NewReceiver(process *Process, trx int, mode Mode) *Receiver {
@@ -50,8 +45,7 @@ func NewReceiver(process *Process, trx int, mode Mode) *Receiver {
 
 		fft: dsp.NewFFT[float32](),
 
-		// tracer: NewFileTracer("trace.csv"),
-		tracer: NewUDPTracer("localhost:3536"),
+		tracer: new(trace.NoTracer),
 	}
 	return result
 }
@@ -90,6 +84,15 @@ func (h *Receiver) do(f func()) {
 	} else {
 		h.op <- f
 	}
+}
+
+func (h *Receiver) SetTracer(tracer trace.Tracer) {
+	h.do(func() {
+		h.tracer = tracer
+		if h.decoder != nil {
+			h.decoder.SetTracer(tracer)
+		}
+	})
 }
 
 func (h *Receiver) SetPeakThreshold(threshold float32) {
@@ -143,7 +146,7 @@ func (h *Receiver) SetVFOOffset(vfo tci.VFO, offset int) {
 			})
 		}
 	})
-	// h.tracer.Start() // TODO remove tracing
+	h.tracer.Start()
 }
 
 func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
@@ -155,12 +158,9 @@ func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
 		h.blockSize = len(data) / 2
 		h.decoder = newDecoder(int(sampleRate), len(data))
 		h.decoder.SetSignalThreshold(h.peakThreshold)
+		h.decoder.SetTracer(h.tracer)
 		h.frequencyMapping = dsp.NewFrequencyMapping(h.sampleRate, h.blockSize, h.centerFrequency)
 		log.Printf("frequency mapping: %s", h.frequencyMapping)
-
-		// TRACING
-		h.decoder.tracer = h.tracer
-		// h.decoder.decoder.SetTracer(h.tracer)
 	} else if h.sampleRate != int(sampleRate) {
 		log.Printf("wrong incoming sample rate on trx %d: %d!", h.trx, sampleRate)
 		return
@@ -264,7 +264,7 @@ func (h *Receiver) run() {
 						h.process.showDecode(peak)
 					})
 
-					// h.tracer.Start() // TODO remove tracing
+					h.tracer.Start()
 				}
 
 				clear(cumulation)

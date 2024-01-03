@@ -1,4 +1,4 @@
-package tci
+package trace
 
 import (
 	"fmt"
@@ -7,6 +7,18 @@ import (
 	"net"
 	"os"
 )
+
+type Tracer interface {
+	Start()
+	Trace(format string, args ...any)
+	Stop()
+}
+
+type NoTracer struct{}
+
+func (t *NoTracer) Start()               {}
+func (t *NoTracer) Trace(string, ...any) {}
+func (t *NoTracer) Stop()                {}
 
 type FileTracer struct {
 	filename string

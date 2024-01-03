@@ -6,6 +6,7 @@ import (
 
 	"github.com/ftl/sdrainer/cw"
 	"github.com/ftl/sdrainer/dsp"
+	"github.com/ftl/sdrainer/trace"
 )
 
 const (
@@ -21,7 +22,7 @@ type decoder struct {
 
 	signalDebouncer *dsp.BoolDebouncer
 	decoder         *cw.Decoder
-	tracer          tracer
+	tracer          trace.Tracer
 
 	peak     *peak
 	lowTicks int
@@ -32,6 +33,7 @@ func newDecoder(sampleRate int, blockSize int) *decoder {
 		signalThreshold: defaultSignalThreshold,
 		signalDebouncer: dsp.NewBoolDebouncer(defaultSignalDebounce),
 		decoder:         cw.NewDecoder(os.Stdout, sampleRate, blockSize),
+		tracer:          new(trace.NoTracer),
 	}
 	result.reset()
 
@@ -48,6 +50,11 @@ func (d *decoder) SetSignalThreshold(threshold float32) {
 
 func (d *decoder) SetSignalDebounce(debounce int) {
 	d.signalDebouncer.SetThreshold(debounce)
+}
+
+func (d *decoder) SetTracer(tracer trace.Tracer) {
+	d.tracer = tracer
+	d.decoder.SetTracer(tracer)
 }
 
 func (d *decoder) Attach(peak *peak) {
@@ -94,9 +101,7 @@ func (d *decoder) Tick(value float32, noiseFloor float32) {
 		stateInt = 80
 	}
 
-	if d.tracer != nil {
-		// d.tracer.Trace("%f;%f;%f;%f\n", noiseFloor, threshold, value, stateInt) // TODO remove tracing
-	}
+	// d.tracer.Trace("%f;%f;%f;%f\n", noiseFloor, threshold, value, stateInt) // TODO remove tracing
 
 	if debounced {
 		d.lowTicks = 0
