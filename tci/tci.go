@@ -89,6 +89,14 @@ func (p *Process) doAsync(f func()) {
 	p.opAsync <- f
 }
 
+func (p *Process) SetThreshold(threshold int) {
+	p.receiver.SetPeakThreshold(float32(threshold))
+}
+
+func (p *Process) SetSignalDebounce(debounce int) {
+	p.receiver.decoder.SetSignalDebounce(debounce)
+}
+
 func (p *Process) onConnected(connected bool) {
 	if !connected {
 		return

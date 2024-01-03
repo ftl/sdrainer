@@ -12,6 +12,8 @@ import (
 
 const (
 	iqBufferSize = 100
+
+	defaultPeakThreshold float32 = 15
 )
 
 type tracer interface {
@@ -24,6 +26,7 @@ type Receiver struct {
 	process         *Process
 	trx             int
 	mode            Mode
+	peakThreshold   float32
 	sampleRate      int
 	centerFrequency int
 	vfoOffset       int
@@ -40,10 +43,12 @@ type Receiver struct {
 
 func NewReceiver(process *Process, trx int, mode Mode) *Receiver {
 	result := &Receiver{
-		process: process,
-		trx:     trx,
-		mode:    mode,
-		fft:     dsp.NewFFT[float32](),
+		process:       process,
+		trx:           trx,
+		mode:          mode,
+		peakThreshold: defaultPeakThreshold,
+
+		fft: dsp.NewFFT[float32](),
 
 		// tracer: NewFileTracer("trace.csv"),
 		tracer: NewUDPTracer("localhost:3536"),
@@ -85,6 +90,15 @@ func (h *Receiver) do(f func()) {
 	} else {
 		h.op <- f
 	}
+}
+
+func (h *Receiver) SetPeakThreshold(threshold float32) {
+	h.do(func() {
+		h.peakThreshold = threshold
+		if h.decoder != nil {
+			h.decoder.SetSignalThreshold(threshold)
+		}
+	})
 }
 
 func (h *Receiver) SetCenterFrequency(frequency int) {
@@ -140,12 +154,13 @@ func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
 		h.sampleRate = int(sampleRate)
 		h.blockSize = len(data) / 2
 		h.decoder = newDecoder(int(sampleRate), len(data))
+		h.decoder.SetSignalThreshold(h.peakThreshold)
 		h.frequencyMapping = dsp.NewFrequencyMapping(h.sampleRate, h.blockSize, h.centerFrequency)
 		log.Printf("frequency mapping: %s", h.frequencyMapping)
 
 		// TRACING
 		h.decoder.tracer = h.tracer
-		h.decoder.decoder.SetTracer(h.tracer)
+		// h.decoder.decoder.SetTracer(h.tracer)
 	} else if h.sampleRate != int(sampleRate) {
 		log.Printf("wrong incoming sample rate on trx %d: %d!", h.trx, sampleRate)
 		return
@@ -207,7 +222,7 @@ func (h *Receiver) run() {
 
 				h.decoder.Tick(maxValue, noiseFloor)
 
-				if h.mode == RandomPeakMode && h.decoder.TimeoutExceeded() { // TODO REMOVE INACTIVATION
+				if h.mode == RandomPeakMode && h.decoder.TimeoutExceeded() {
 					h.decoder.Detach()
 					h.process.doAsync(func() {
 						h.process.hideDecode()
@@ -226,7 +241,7 @@ func (h *Receiver) run() {
 				peaks, threshold = h.detectPeaks(peaks, cumulation, cumulationSize, noiseFloor)
 				_ = threshold
 
-				// if h.tracer != nil && cycle > 100 {
+				// if h.tracer != nil {
 				// 	peakFrame := peaksToPeakFrame(peaks, h.blockSize)
 				// 	for i, v := range cumulation {
 				// 		h.tracer.Trace("%f;%f;%f;%f\n", v/float32(cumulationSize), threshold, noiseFloor, peakFrame[i])
@@ -283,10 +298,9 @@ func (h *Receiver) findNoiseFloor(psd block) float32 {
 }
 
 func (h *Receiver) detectPeaks(peaks []peak, spectrum block, cumulationSize int, noiseFloor float32) ([]peak, float32) {
-	const peakThreshold float32 = 1.3
 	peaks = peaks[:0]
 
-	threshold := peakThreshold * noiseFloor
+	threshold := h.peakThreshold + noiseFloor
 	var currentPeak *peak
 	for i, v := range spectrum {
 		value := v / float32(cumulationSize)

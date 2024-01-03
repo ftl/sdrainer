@@ -9,14 +9,16 @@ import (
 )
 
 const (
-	signalThreshold float32 = 15
-
 	silenceTimeout = 400
 
-	defaultSignalDebounceThreshold = 1
+	defaultSignalThreshold float32 = 15
+
+	defaultSignalDebounce = 1
 )
 
 type decoder struct {
+	signalThreshold float32
+
 	signalDebouncer *dsp.BoolDebouncer
 	decoder         *cw.Decoder
 	tracer          tracer
@@ -27,7 +29,8 @@ type decoder struct {
 
 func newDecoder(sampleRate int, blockSize int) *decoder {
 	result := &decoder{
-		signalDebouncer: dsp.NewBoolDebouncer(defaultSignalDebounceThreshold),
+		signalThreshold: defaultSignalThreshold,
+		signalDebouncer: dsp.NewBoolDebouncer(defaultSignalDebounce),
 		decoder:         cw.NewDecoder(os.Stdout, sampleRate, blockSize),
 	}
 	result.reset()
@@ -37,6 +40,14 @@ func newDecoder(sampleRate int, blockSize int) *decoder {
 
 func (d *decoder) reset() {
 	d.lowTicks = 0
+}
+
+func (d *decoder) SetSignalThreshold(threshold float32) {
+	d.signalThreshold = threshold
+}
+
+func (d *decoder) SetSignalDebounce(debounce int) {
+	d.signalDebouncer.SetThreshold(debounce)
 }
 
 func (d *decoder) Attach(peak *peak) {
@@ -71,7 +82,7 @@ func (d *decoder) Tick(value float32, noiseFloor float32) {
 		return
 	}
 
-	threshold := signalThreshold + noiseFloor
+	threshold := d.signalThreshold + noiseFloor
 	state := value > threshold
 	debounced := d.signalDebouncer.Debounce(state)
 

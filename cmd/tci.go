@@ -11,10 +11,12 @@ import (
 )
 
 var tciFlags = struct {
-	host  string
-	trx   int
-	mode  string
-	trace bool
+	host      string
+	trx       int
+	mode      string
+	threshold int
+	debounce  int
+	trace     bool
 }{}
 
 var tciCmd = &cobra.Command{
@@ -29,6 +31,9 @@ func init() {
 	tciCmd.Flags().StringVar(&tciFlags.host, "host", "localhost:40001", "the TCI host and port")
 	tciCmd.Flags().IntVar(&tciFlags.trx, "trx", 0, "the zero-based index of the TCI trx")
 	tciCmd.Flags().StringVar(&tciFlags.mode, "mode", "vfo", "vfo: decode at the frequency of VFO A, random: decode a random signal in the spectrum")
+	tciCmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
+	tciCmd.Flags().IntVar(&tciFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal")
+
 	tciCmd.Flags().BoolVar(&tciFlags.trace, "trace", false, "trace the TCI communication on the console")
 }
 
@@ -37,6 +42,7 @@ func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	process.SetThreshold(tciFlags.threshold)
 
 	<-ctx.Done()
 	process.Close()
