@@ -124,7 +124,6 @@ type Decoder struct {
 }
 
 func NewDecoder(out io.Writer, sampleRate int, blockSize int) *Decoder {
-
 	result := &Decoder{
 		out:                  out,
 		tickSeconds:          float64(blockSize) / float64(sampleRate),

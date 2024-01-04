@@ -14,7 +14,7 @@ const (
 	defaultMaxScale          = 12
 )
 
-type Demodulator struct {
+type AudioDemodulator struct {
 	filter       *dsp.Goertzel
 	debouncer    *dsp.BoolDebouncer
 	decoder      *Decoder
@@ -28,11 +28,11 @@ type Demodulator struct {
 	closed chan struct{}
 }
 
-func NewDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int) *Demodulator {
+func NewAudioDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int) *AudioDemodulator {
 	if bufferSize == 0 {
 		bufferSize = defaultBufferSize
 	}
-	result := &Demodulator{
+	result := &AudioDemodulator{
 		filter:       dsp.NewDefaultGoertzel(pitch, sampleRate),
 		debouncer:    dsp.NewBoolDebouncer(defaultDebounceThreshold),
 		maxScale:     defaultMaxScale,
@@ -50,7 +50,7 @@ func NewDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int
 	return result
 }
 
-func (d *Demodulator) Close() {
+func (d *AudioDemodulator) Close() {
 	select {
 	case <-d.close:
 		return
@@ -60,13 +60,13 @@ func (d *Demodulator) Close() {
 	}
 }
 
-func (d *Demodulator) SetMaxScale(scale float64) {
+func (d *AudioDemodulator) SetMaxScale(scale float64) {
 	d.do(func() {
 		d.maxScale = scale
 	})
 }
 
-func (d *Demodulator) MaxScale() float64 {
+func (d *AudioDemodulator) MaxScale() float64 {
 	var result float64
 	d.do(func() {
 		result = d.maxScale
@@ -74,25 +74,25 @@ func (d *Demodulator) MaxScale() float64 {
 	return result
 }
 
-func (d *Demodulator) SetScale(scale float64) {
+func (d *AudioDemodulator) SetScale(scale float64) {
 	d.do(func() {
 		d.scale = float32(scale)
 	})
 }
 
-func (d *Demodulator) SetChannelCount(channelCount int) {
+func (d *AudioDemodulator) SetChannelCount(channelCount int) {
 	d.do(func() {
 		d.channelCount = channelCount
 	})
 }
 
-func (d *Demodulator) SetDebounceThreshold(threshold int) {
+func (d *AudioDemodulator) SetDebounceThreshold(threshold int) {
 	d.do(func() {
 		d.debouncer.SetThreshold(threshold)
 	})
 }
 
-func (d *Demodulator) DebounceThreshold() int {
+func (d *AudioDemodulator) DebounceThreshold() int {
 	var result int
 	d.do(func() {
 		result = d.debouncer.Threshold()
@@ -100,13 +100,13 @@ func (d *Demodulator) DebounceThreshold() int {
 	return result
 }
 
-func (d *Demodulator) PresetWPM(wpm int) {
+func (d *AudioDemodulator) PresetWPM(wpm int) {
 	d.do(func() {
 		d.decoder.presetWPM(wpm)
 	})
 }
 
-func (d *Demodulator) WPM() int {
+func (d *AudioDemodulator) WPM() int {
 	var result int
 	d.do(func() {
 		result = int(math.Round(d.decoder.wpm))
@@ -114,13 +114,13 @@ func (d *Demodulator) WPM() int {
 	return result
 }
 
-func (d *Demodulator) SetMagnitudeThreshold(threshold float64) {
+func (d *AudioDemodulator) SetMagnitudeThreshold(threshold float64) {
 	d.do(func() {
 		d.filter.SetMagnitudeThreshold(threshold)
 	})
 }
 
-func (d *Demodulator) MagnitudeThreshold() float64 {
+func (d *AudioDemodulator) MagnitudeThreshold() float64 {
 	var result float64
 	d.do(func() {
 		result = d.filter.MagnitudeThreshold()
@@ -128,11 +128,11 @@ func (d *Demodulator) MagnitudeThreshold() float64 {
 	return result
 }
 
-func (d *Demodulator) Blocksize() int {
+func (d *AudioDemodulator) Blocksize() int {
 	return d.filter.Blocksize()
 }
 
-func (d *Demodulator) Write(buf []float32) (int, error) {
+func (d *AudioDemodulator) Write(buf []float32) (int, error) {
 	n := 0
 	for i, sample := range buf {
 		if (i % d.channelCount) == 0 {
@@ -143,7 +143,7 @@ func (d *Demodulator) Write(buf []float32) (int, error) {
 	return n, nil
 }
 
-func (d *Demodulator) do(f func()) {
+func (d *AudioDemodulator) do(f func()) {
 	select {
 	case <-d.closed:
 		return
@@ -152,7 +152,7 @@ func (d *Demodulator) do(f func()) {
 	}
 }
 
-func (d *Demodulator) run() {
+func (d *AudioDemodulator) run() {
 	defer close(d.closed)
 	blocksize := d.filter.Blocksize()
 	block := make(dsp.FilterBlock, 0)

@@ -55,7 +55,7 @@ func runPulse(ctx context.Context, cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	demodulator := cw.NewDemodulator(os.Stdout, 700, source.SampleRate(), 0)
+	demodulator := cw.NewAudioDemodulator(os.Stdout, 700, source.SampleRate(), 0)
 	defer demodulator.Close()
 	demodulator.SetScale(pulseFlags.scale)
 	demodulator.SetDebounceThreshold(pulseFlags.debounceThreshold)

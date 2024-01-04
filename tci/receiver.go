@@ -8,6 +8,7 @@ import (
 
 	tci "github.com/ftl/tci/client"
 
+	"github.com/ftl/sdrainer/cw"
 	"github.com/ftl/sdrainer/dsp"
 	"github.com/ftl/sdrainer/trace"
 )
@@ -35,7 +36,7 @@ type Receiver struct {
 	op               chan func()
 	fft              *dsp.FFT[float32]
 	frequencyMapping *dsp.FrequencyMapping[int]
-	decoder          *decoder[float32, int]
+	decoder          *cw.SpectralDemodulator[float32, int]
 
 	tracer trace.Tracer
 }
@@ -120,7 +121,7 @@ func (h *Receiver) SetCenterFrequency(frequency int) {
 	h.do(func() {
 		h.centerFrequency = frequency
 		if h.decoder != nil {
-			h.decoder.reset()
+			h.decoder.Reset()
 		}
 		if h.frequencyMapping != nil {
 			h.frequencyMapping.SetCenterFrequency(frequency)
@@ -168,7 +169,7 @@ func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
 	if h.sampleRate == 0 {
 		h.sampleRate = int(sampleRate)
 		h.blockSize = len(data) / 2
-		h.decoder = newDecoder[float32, int](int(sampleRate), len(data))
+		h.decoder = cw.NewSpectralDemodulator[float32, int](int(sampleRate), len(data))
 		h.decoder.SetSignalThreshold(h.peakThreshold)
 		h.decoder.SetTracer(h.tracer)
 		h.frequencyMapping = dsp.NewFrequencyMapping(h.sampleRate, h.blockSize, h.centerFrequency)
