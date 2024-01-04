@@ -162,3 +162,31 @@ func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) T {
 
 	return minValue
 }
+
+func FindPeaks[T, F Number](peaks []Peak[T, F], spectrum Block[T], cumulationSize int, threshold T, frequencyMapping *FrequencyMapping[F]) []Peak[T, F] {
+	peaks = peaks[:0]
+
+	var currentPeak *Peak[T, F]
+	for i, v := range spectrum {
+		value := v / T(cumulationSize)
+		if currentPeak == nil && value > threshold {
+			currentPeak = &Peak[T, F]{From: i, MaxValue: value, MaxBin: i}
+		} else if currentPeak != nil && value <= threshold {
+			currentPeak.To = i - 1
+			currentPeak.FromFrequency = frequencyMapping.BinToFrequency(currentPeak.From, BinFrom)
+			currentPeak.ToFrequency = frequencyMapping.BinToFrequency(currentPeak.To, BinTo)
+			peaks = append(peaks, *currentPeak)
+			currentPeak = nil
+		} else if currentPeak != nil && currentPeak.MaxValue < value {
+			currentPeak.MaxValue = value
+			currentPeak.MaxBin = i
+		}
+	}
+
+	if currentPeak != nil {
+		currentPeak.To = len(spectrum) - 1
+		peaks = append(peaks, *currentPeak)
+	}
+
+	return peaks
+}

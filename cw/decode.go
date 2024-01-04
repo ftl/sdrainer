@@ -24,7 +24,7 @@ See also:
 */
 
 const (
-	traceCW = "cw"
+	traceDecode = "decode"
 
 	defaultWPM     = 20
 	maxSymbolCount = 8
@@ -203,7 +203,7 @@ func (d *Decoder) Tick(state bool) {
 		if state {
 			stateInt = 1
 		}
-		d.tracer.Trace(traceCW, "%f;%f;%d\n", d.ditTime, 3.0, stateInt)
+		d.tracer.Trace(traceDecode, "%f;%f;%d\n", d.ditTime, 3.0, stateInt)
 	}
 
 	if d.decoding && currentDuration > upperBound {

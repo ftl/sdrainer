@@ -19,13 +19,6 @@ const (
 	timeout         = 10 * time.Second
 )
 
-type Mode string
-
-const (
-	VFOMode        Mode = "vfo"
-	RandomPeakMode Mode = "random"
-)
-
 type Process struct {
 	client   *tci.Client
 	listener *tciListener
@@ -41,7 +34,7 @@ type Process struct {
 	closed  chan struct{}
 }
 
-func New(host string, trx int, mode Mode, traceTCI bool) (*Process, error) {
+func New(host string, trx int, mode ReceiverMode, traceTCI bool) (*Process, error) {
 	tcpHost, err := parseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)

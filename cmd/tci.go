@@ -36,15 +36,15 @@ func init() {
 	tciCmd.Flags().IntVar(&tciFlags.trx, "trx", 0, "the zero-based index of the TCI trx")
 	tciCmd.Flags().StringVar(&tciFlags.mode, "mode", "vfo", "vfo: decode at the frequency of VFO A, random: decode a random signal in the spectrum")
 	tciCmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
-	tciCmd.Flags().IntVar(&tciFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal")
+	tciCmd.Flags().IntVar(&tciFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal detection")
 
 	tciCmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
-	tciCmd.Flags().StringVar(&tciFlags.traceContext, "trace", "", "spectrum | signal | cw")
+	tciCmd.Flags().StringVar(&tciFlags.traceContext, "trace", "", "spectrum | demod | decode")
 	tciCmd.Flags().StringVar(&tciFlags.traceDestination, "trace_to", "", "file:<filename> | udp:<host:port>")
 }
 
 func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
-	process, err := tci.New(tciFlags.host, tciFlags.trx, tci.Mode(strings.ToLower(tciFlags.mode)), tciFlags.traceTCI)
+	process, err := tci.New(tciFlags.host, tciFlags.trx, tci.ReceiverMode(strings.ToLower(tciFlags.mode)), tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}
