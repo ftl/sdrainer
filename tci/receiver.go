@@ -6,15 +6,17 @@ import (
 	"math/rand"
 	"time"
 
+	tci "github.com/ftl/tci/client"
+
 	"github.com/ftl/sdrainer/dsp"
 	"github.com/ftl/sdrainer/trace"
-	tci "github.com/ftl/tci/client"
 )
 
 const (
 	traceSpectrum = "spectrum"
 
-	iqBufferSize = 100
+	iqBufferSize   = 100
+	cumulationSize = 30
 
 	defaultPeakThreshold float32 = 15
 )
@@ -33,7 +35,7 @@ type Receiver struct {
 	op               chan func()
 	fft              *dsp.FFT[float32]
 	frequencyMapping *dsp.FrequencyMapping[int]
-	decoder          *decoder
+	decoder          *decoder[float32, int]
 
 	tracer trace.Tracer
 }
@@ -147,12 +149,12 @@ func (h *Receiver) SetVFOOffset(vfo tci.VFO, offset int) {
 		if h.mode == VFOMode {
 			freq := h.vfoOffset + h.centerFrequency
 			bin := h.frequencyToBin(freq)
-			h.decoder.Attach(&peak{
-				from:          max(0, bin-1),
-				to:            min(bin+1, h.blockSize-1),
-				fromFrequency: freq,
-				toFrequency:   freq,
-				max:           0.1,
+			h.decoder.Attach(&dsp.Peak[float32, int]{
+				From:          max(0, bin-1),
+				To:            min(bin+1, h.blockSize-1),
+				FromFrequency: freq,
+				ToFrequency:   freq,
+				MaxValue:      0.1,
 			})
 		}
 	})
@@ -166,7 +168,7 @@ func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
 	if h.sampleRate == 0 {
 		h.sampleRate = int(sampleRate)
 		h.blockSize = len(data) / 2
-		h.decoder = newDecoder(int(sampleRate), len(data))
+		h.decoder = newDecoder[float32, int](int(sampleRate), len(data))
 		h.decoder.SetSignalThreshold(h.peakThreshold)
 		h.decoder.SetTracer(h.tracer)
 		h.frequencyMapping = dsp.NewFrequencyMapping(h.sampleRate, h.blockSize, h.centerFrequency)
@@ -187,25 +189,22 @@ func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
 }
 
 func (h *Receiver) run() {
-	var spectrum block
-	var psd block
-	var cumulation block
-	var peaks []peak
+	var spectrum dsp.Block[float32]
+	var psd dsp.Block[float32]
+	var cumulation dsp.Block[float32]
+	var peaks []dsp.Peak[float32, int]
 
-	cumulationSize := 30
 	cumulationCount := 0
 
 	peakTicker := time.NewTicker(5 * time.Second)
 	defer peakTicker.Stop()
 
-	cycle := 0
 	for {
-		cycle++
 		select {
 		case op := <-h.op:
 			op()
 		case <-peakTicker.C:
-			// peaksToShow := make([]peak, len(peaks))
+			// peaksToShow := make([]dsp.peak[float32, int], len(peaks))
 			// copy(peaksToShow, peaks)
 			// h.process.ShowPeaks(peaksToShow)
 		case frame := <-h.in:
@@ -213,11 +212,11 @@ func (h *Receiver) run() {
 				continue
 			}
 
-			if spectrum.size() != h.blockSize {
+			if spectrum.Size() != h.blockSize {
 				spectrum = make([]float32, h.blockSize)
 				psd = make([]float32, h.blockSize)
 				cumulation = make([]float32, h.blockSize)
-				peaks = make([]peak, 0, h.blockSize)
+				peaks = make([]dsp.Peak[float32, int], 0, h.blockSize)
 			}
 
 			shiftedMagnitude := func(fftValue complex128, blockSize int) float32 {
@@ -260,11 +259,11 @@ func (h *Receiver) run() {
 					peakIndex := rand.Intn(len(peaks))
 					peak := peaks[peakIndex]
 
-					peak.max = peak.max / float32(cumulationSize)
-					peak.from = max(0, peak.maxBin-1)
-					peak.to = min(peak.maxBin+1, h.blockSize-1)
-					peak.fromFrequency = h.binToFrequency(peak.from, dsp.BinFrom)
-					peak.toFrequency = h.binToFrequency(peak.to, dsp.BinTo)
+					peak.MaxValue = peak.MaxValue / float32(cumulationSize)
+					peak.From = max(0, peak.MaxBin-1)
+					peak.To = min(peak.MaxBin+1, h.blockSize-1)
+					peak.FromFrequency = h.binToFrequency(peak.From, dsp.BinFrom)
+					peak.ToFrequency = h.binToFrequency(peak.To, dsp.BinTo)
 
 					h.decoder.Attach(&peak)
 					h.process.ShowDecode(peak)
@@ -279,7 +278,7 @@ func (h *Receiver) run() {
 	}
 }
 
-func (h *Receiver) findNoiseFloor(psd block) float32 {
+func (h *Receiver) findNoiseFloor(psd dsp.Block[float32]) float32 {
 	const edgeWidth = 70
 
 	windowSize := len(psd) / 10
@@ -302,29 +301,29 @@ func (h *Receiver) findNoiseFloor(psd block) float32 {
 	return dsp.PSDValue2dBm(minValue, h.blockSize) + 120
 }
 
-func (h *Receiver) detectPeaks(peaks []peak, spectrum block, cumulationSize int, noiseFloor float32) ([]peak, float32) {
+func (h *Receiver) detectPeaks(peaks []dsp.Peak[float32, int], spectrum dsp.Block[float32], cumulationSize int, noiseFloor float32) ([]dsp.Peak[float32, int], float32) {
 	peaks = peaks[:0]
 
 	threshold := h.peakThreshold + noiseFloor
-	var currentPeak *peak
+	var currentPeak *dsp.Peak[float32, int]
 	for i, v := range spectrum {
 		value := v / float32(cumulationSize)
 		if currentPeak == nil && value > threshold {
-			currentPeak = &peak{from: i, max: value, maxBin: i}
+			currentPeak = &dsp.Peak[float32, int]{From: i, MaxValue: value, MaxBin: i}
 		} else if currentPeak != nil && value <= threshold {
-			currentPeak.to = i - 1
-			currentPeak.fromFrequency = h.binToFrequency(currentPeak.from, dsp.BinFrom)
-			currentPeak.toFrequency = h.binToFrequency(currentPeak.to, dsp.BinTo)
+			currentPeak.To = i - 1
+			currentPeak.FromFrequency = h.binToFrequency(currentPeak.From, dsp.BinFrom)
+			currentPeak.ToFrequency = h.binToFrequency(currentPeak.To, dsp.BinTo)
 			peaks = append(peaks, *currentPeak)
 			currentPeak = nil
-		} else if currentPeak != nil && currentPeak.max < value {
-			currentPeak.max = value
-			currentPeak.maxBin = i
+		} else if currentPeak != nil && currentPeak.MaxValue < value {
+			currentPeak.MaxValue = value
+			currentPeak.MaxBin = i
 		}
 	}
 
 	if currentPeak != nil {
-		currentPeak.to = len(spectrum) - 1
+		currentPeak.To = len(spectrum) - 1
 		peaks = append(peaks, *currentPeak)
 	}
 
@@ -345,67 +344,12 @@ func (h *Receiver) frequencyToBin(frequency int) int {
 	return h.frequencyMapping.FrequencyToBin(frequency)
 }
 
-type block []float32
-
-func (b block) size() int {
-	return len(b)
-}
-
-func (b block) Sum(from, to int) float32 {
-	var sum float32
-	for i := from; i <= to; i++ {
-		sum += b[i]
-	}
-	return sum
-}
-
-func (b block) Mean(from, to int) float32 {
-	return b.Sum(from, to) / float32(to-from+1)
-}
-
-func (b block) Max(from, to int) (float32, int) {
-	var maxValue float32 = -1 * math.MaxFloat32
-	var maxI int
-	for i := from; i <= to; i++ {
-		if maxValue < b[i] {
-			maxValue = b[i]
-			maxI = i
-		}
-	}
-	return maxValue, maxI
-}
-
-type peak struct {
-	from          int
-	to            int
-	fromFrequency int
-	toFrequency   int
-	max           float32
-	maxBin        int
-}
-
-func (p peak) Center() int {
-	return p.from + ((p.to - p.from) / 2)
-}
-
-func (p peak) CenterFrequency() int {
-	return p.fromFrequency + ((p.toFrequency - p.fromFrequency) / 2)
-}
-
-func (p peak) Width() int {
-	return (p.to - p.from) + 1
-}
-
-func (p peak) WidthHz() int {
-	return p.toFrequency - p.fromFrequency
-}
-
-func peaksToPeakFrame(peaks []peak, blockSize int) []float32 {
+func peaksToPeakFrame(peaks []dsp.Peak[float32, int], blockSize int) []float32 {
 	result := make([]float32, blockSize)
 
 	for _, p := range peaks {
-		for i := p.from; i <= p.to; i++ {
-			result[i] = p.max
+		for i := p.From; i <= p.To; i++ {
+			result[i] = p.MaxValue
 		}
 	}
 

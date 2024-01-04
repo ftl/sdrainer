@@ -279,3 +279,74 @@ func (v *RollingMean[T]) Reset() {
 	v.sumForMean = 0
 	v.mean = 0
 }
+
+// Block represents a block of samples that are processed as one unit.
+type Block[T Number] []T
+
+// Size returns the blocksize.
+func (b Block[T]) Size() int {
+	return len(b)
+}
+
+// Subblock returns the given section of this block.
+func (b Block[T]) Subblock(from, to int) Block[T] {
+	return b[from : to+1]
+}
+
+// Sum of the values in the given section of this block.
+func (b Block[T]) Sum(from, to int) T {
+	var sum T
+	for i := from; i <= to; i++ {
+		sum += b[i]
+	}
+	return sum
+}
+
+// Mean of the values in the given section of this block.
+func (b Block[T]) Mean(from, to int) T {
+	return b.Sum(from, to) / T(to-from+1)
+}
+
+// Max imum value in the given section of this block.
+func (b Block[T]) Max(from, to int) (T, int) {
+	maxValue := b[0]
+	maxI := 0
+	for i := from; i <= to; i++ {
+		if maxValue < b[i] {
+			maxValue = b[i]
+			maxI = i
+		}
+	}
+	return maxValue, maxI
+}
+
+// Peak represents a section in a block that contains a peak.
+// M is used to represent magnitude values in the spectrum, F is the type used to represent frequencies
+type Peak[M, F Number] struct {
+	From          int
+	To            int
+	FromFrequency F
+	ToFrequency   F
+	MaxValue      M
+	MaxBin        int
+}
+
+// Center index
+func (p Peak[T, F]) Center() int {
+	return p.From + ((p.To - p.From) / 2)
+}
+
+// CenterFrequency, based on the FromFrequency and ToFrequency fields. Those fields must be filled with meaningful values.
+func (p Peak[T, F]) CenterFrequency() F {
+	return p.FromFrequency + ((p.ToFrequency - p.FromFrequency) / 2)
+}
+
+// Width in bins.
+func (p Peak[T, F]) Width() int {
+	return (p.To - p.From) + 1
+}
+
+// WidthHz in Hz, based on the FromFrequency and ToFrequency fields. Those fiels must be filled with meaningful values.
+func (p Peak[T, F]) WidthHz() F {
+	return p.ToFrequency - p.FromFrequency
+}
