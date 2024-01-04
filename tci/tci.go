@@ -100,7 +100,7 @@ func (p *Process) SetThreshold(threshold int) {
 }
 
 func (p *Process) SetSignalDebounce(debounce int) {
-	p.receiver.decoder.SetSignalDebounce(debounce)
+	p.receiver.SetSignalDebounce(debounce)
 }
 
 func (p *Process) onConnected(connected bool) {
@@ -122,6 +122,12 @@ var (
 	decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
 )
 
+func (p *Process) ShowPeaks(peaks []peak) {
+	p.doAsync(func() {
+		p.showPeaks(peaks)
+	})
+}
+
 func (p *Process) showPeaks(peaks []peak) {
 	for _, peak := range peaks {
 		label := fmt.Sprintf("%d w%d", peak.CenterFrequency(), peak.Width())
@@ -129,11 +135,21 @@ func (p *Process) showPeaks(peaks []peak) {
 	}
 }
 
+func (p *Process) ShowDecode(peak peak) {
+	p.doAsync(func() {
+		p.showDecode(peak)
+	})
+}
+
 func (p *Process) showDecode(peak peak) {
 	p.client.DeleteSpot(decodeLabel)
 	p.client.AddSpot(decodeLabel, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
 	offset := peak.CenterFrequency() - p.receiver.CenterFrequency()
 	p.client.SetIF(p.trx, tci.VFOA, offset)
+}
+
+func (p *Process) HideDecode() {
+	p.doAsync(p.hideDecode)
 }
 
 func (p *Process) hideDecode() {

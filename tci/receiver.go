@@ -106,6 +106,14 @@ func (h *Receiver) SetPeakThreshold(threshold float32) {
 	})
 }
 
+func (h *Receiver) SetSignalDebounce(debounce int) {
+	h.do(func() {
+		if h.decoder != nil {
+			h.decoder.SetSignalDebounce(debounce)
+		}
+	})
+}
+
 func (h *Receiver) SetCenterFrequency(frequency int) {
 	h.do(func() {
 		h.centerFrequency = frequency
@@ -197,15 +205,14 @@ func (h *Receiver) run() {
 		case op := <-h.op:
 			op()
 		case <-peakTicker.C:
-			peaksToShow := make([]peak, len(peaks))
-			copy(peaksToShow, peaks)
-			// h.process.doAsync(func() {
-			// 	h.process.showPeaks(peaksToShow)
-			// })
+			// peaksToShow := make([]peak, len(peaks))
+			// copy(peaksToShow, peaks)
+			// h.process.ShowPeaks(peaksToShow)
 		case frame := <-h.in:
 			if len(frame) == 0 {
 				continue
 			}
+
 			if spectrum.size() != h.blockSize {
 				spectrum = make([]float32, h.blockSize)
 				psd = make([]float32, h.blockSize)
@@ -220,15 +227,13 @@ func (h *Receiver) run() {
 			noiseFloor := h.findNoiseFloor(psd)
 
 			if h.decoder != nil && h.decoder.Attached() {
-				maxValue, _ := spectrum.rangeMax(h.decoder.PeakRange())
+				maxValue, _ := spectrum.Max(h.decoder.PeakRange())
 
 				h.decoder.Tick(maxValue, noiseFloor)
 
 				if h.mode == RandomPeakMode && h.decoder.TimeoutExceeded() {
 					h.decoder.Detach()
-					h.process.doAsync(func() {
-						h.process.hideDecode()
-					})
+					h.process.HideDecode()
 					h.tracer.Stop()
 				}
 			}
@@ -262,9 +267,7 @@ func (h *Receiver) run() {
 					peak.toFrequency = h.binToFrequency(peak.to, dsp.BinTo)
 
 					h.decoder.Attach(&peak)
-					h.process.doAsync(func() {
-						h.process.showDecode(peak)
-					})
+					h.process.ShowDecode(peak)
 
 					h.tracer.Start()
 				}
@@ -348,7 +351,7 @@ func (b block) size() int {
 	return len(b)
 }
 
-func (b block) rangeSum(from, to int) float32 {
+func (b block) Sum(from, to int) float32 {
 	var sum float32
 	for i := from; i <= to; i++ {
 		sum += b[i]
@@ -356,11 +359,11 @@ func (b block) rangeSum(from, to int) float32 {
 	return sum
 }
 
-func (b block) rangeMean(from, to int) float32 {
-	return b.rangeSum(from, to) / float32(to-from+1)
+func (b block) Mean(from, to int) float32 {
+	return b.Sum(from, to) / float32(to-from+1)
 }
 
-func (b block) rangeMax(from, to int) (float32, int) {
+func (b block) Max(from, to int) (float32, int) {
 	var maxValue float32 = -1 * math.MaxFloat32
 	var maxI int
 	for i := from; i <= to; i++ {
