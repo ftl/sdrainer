@@ -36,8 +36,9 @@ func TestFrequencyMapping(t *testing.T) {
 		from int
 		to   int
 	}{
-		{256, centerFrequency, centerFrequency + binSize - 1},
-		{255, centerFrequency - binSize, centerFrequency - 1},
+		{0, centerFrequency - sampleRate/2, centerFrequency - sampleRate/2 + binSize},
+		{256, centerFrequency, centerFrequency + binSize},
+		{511, centerFrequency + sampleRate/2 - binSize, centerFrequency + sampleRate/2},
 	}
 	for _, tc := range tt {
 		t.Run(fmt.Sprintf("%d", tc.bin), func(t *testing.T) {
@@ -45,7 +46,7 @@ func TestFrequencyMapping(t *testing.T) {
 
 			assert.Equal(t, tc.bin, m.FrequencyToBin(tc.from), "from to bin")
 			assert.Equal(t, tc.bin, m.FrequencyToBin(tc.to), "to to bin")
-			assert.Equal(t, tc.from, m.BinToFrequency(tc.bin, BinFrom), "bin to from")
+			assert.Equal(t, tc.from-(tc.bin%2), m.BinToFrequency(tc.bin, BinFrom), "bin to from")
 			assert.Equal(t, tc.to, m.BinToFrequency(tc.bin, BinTo), "bin to to")
 		})
 	}

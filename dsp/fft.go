@@ -85,18 +85,18 @@ func PSDValue2dBm[T Number](psdValue T, blockSize int) T {
 	return T(10.0 * math.Log10(20.0*float64(psdValue)/math.Pow(float64(blockSize), 2)))
 }
 
-type BinLocation int
+type BinLocation float64
 
 const (
 	BinFrom   BinLocation = 0
-	BinCenter BinLocation = 2
+	BinCenter BinLocation = 0.5
 	BinTo     BinLocation = 1
 )
 
 type FrequencyMapping[F Number] struct {
 	sampleRate int
 	blockSize  int
-	binSize    int
+	binSize    float64
 	centerBin  int
 
 	centerFrequency int
@@ -107,7 +107,7 @@ func NewFrequencyMapping[F Number](sampleRate int, blockSize int, centerFrequenc
 	result := &FrequencyMapping[F]{
 		sampleRate: sampleRate,
 		blockSize:  blockSize,
-		binSize:    sampleRate / blockSize,
+		binSize:    float64(sampleRate) / float64(blockSize),
 		centerBin:  blockSize / 2,
 	}
 	result.SetCenterFrequency(centerFrequency)
@@ -121,22 +121,17 @@ func (m *FrequencyMapping[F]) String() string {
 
 func (m *FrequencyMapping[F]) SetCenterFrequency(frequency F) {
 	m.centerFrequency = int(frequency)
-	m.fromFrequency = m.centerFrequency - m.centerBin*m.binSize
+	m.fromFrequency = m.centerFrequency - m.sampleRate/2
 }
 
 func (m *FrequencyMapping[F]) BinToFrequency(bin int, location BinLocation) F {
-	var locationDelta int
-	if location != 0 {
-		locationDelta = int(float64(m.binSize)*(1.0/float64(location))) - 1
-	} else {
-		locationDelta = 0
-	}
+	locationDelta := float64(m.binSize) * float64(location)
 
-	return F(m.fromFrequency + bin*m.binSize + locationDelta)
+	return F(m.fromFrequency + int(float64(bin)*m.binSize+locationDelta))
 }
 
 func (m *FrequencyMapping[F]) FrequencyToBin(frequency F) int {
-	bin := (int(frequency) - m.fromFrequency) / m.binSize
+	bin := int((float64(frequency) - float64(m.fromFrequency)) / m.binSize)
 	return max(0, min(bin, m.blockSize-1))
 }
 
