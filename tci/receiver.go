@@ -37,7 +37,6 @@ type ReceiverIndicator[T, F dsp.Number] interface {
 type Receiver[T, F dsp.Number] struct {
 	id              string
 	indicator       ReceiverIndicator[T, F]
-	trx             int
 	mode            ReceiverMode
 	peakThreshold   T
 	edgeWidth       int
@@ -55,11 +54,10 @@ type Receiver[T, F dsp.Number] struct {
 	tracer trace.Tracer
 }
 
-func NewReceiver[T, F dsp.Number](id string, indicator ReceiverIndicator[T, F], trx int, mode ReceiverMode) *Receiver[T, F] {
+func NewReceiver[T, F dsp.Number](id string, indicator ReceiverIndicator[T, F], mode ReceiverMode) *Receiver[T, F] {
 	result := &Receiver[T, F]{
 		id:            id,
 		indicator:     indicator,
-		trx:           trx,
 		mode:          mode,
 		peakThreshold: defaultPeakThreshold,
 		edgeWidth:     defaultEdgeWidth,
@@ -182,11 +180,11 @@ func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
 		return
 	}
 	if r.sampleRate != int(sampleRate) {
-		log.Printf("wrong incoming sample rate on trx %d: %d!", r.trx, sampleRate)
+		log.Printf("wrong incoming sample rate on receiver %s: %d!", r.id, sampleRate)
 		return
 	}
 	if r.blockSize != len(data)/2 {
-		log.Printf("wrong incoming block size on trx %d: %d", r.trx, len(data))
+		log.Printf("wrong incoming block size on receiver %s: %d", r.id, len(data))
 		return
 	}
 
@@ -194,7 +192,7 @@ func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
 	case r.in <- data:
 		return
 	default:
-		log.Printf("IQ data skipped on trx %d", r.trx)
+		log.Printf("IQ data skipped on receiver %s", r.id)
 	}
 }
 

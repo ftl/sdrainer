@@ -53,7 +53,7 @@ func New(host string, trx int, mode ReceiverMode, traceTCI bool) (*Process, erro
 		closed:  make(chan struct{}),
 	}
 	result.listener = &tciListener{process: result, trx: result.trx}
-	result.receiver = NewReceiver[float32, int]("", result, result.trx, mode)
+	result.receiver = NewReceiver[float32, int]("", result, mode)
 	go result.run()
 
 	client.Notify(result.listener)
