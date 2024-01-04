@@ -30,7 +30,11 @@ type Process struct {
 	client   *tci.Client
 	listener *tciListener
 	trx      int
-	receiver *Receiver
+	receiver *Receiver[float32, int]
+
+	threshold      float32
+	signalDebounce int
+	tracer         trace.Tracer
 
 	opAsync chan func()
 	close   chan struct{}
@@ -56,7 +60,7 @@ func New(host string, trx int, mode Mode, traceTCI bool) (*Process, error) {
 		closed:  make(chan struct{}),
 	}
 	result.listener = &tciListener{process: result, trx: result.trx}
-	result.receiver = NewReceiver(result, result.trx, mode)
+	result.receiver = NewReceiver[float32, int]("", result, result.trx, mode)
 	go result.run()
 
 	client.Notify(result.listener)
@@ -93,15 +97,24 @@ func (p *Process) doAsync(f func()) {
 }
 
 func (p *Process) SetTracer(tracer trace.Tracer) {
-	p.receiver.SetTracer(tracer)
+	p.tracer = tracer
+	if p.client.Connected() {
+		p.receiver.SetTracer(tracer)
+	}
 }
 
 func (p *Process) SetThreshold(threshold int) {
-	p.receiver.SetPeakThreshold(float32(threshold))
+	p.threshold = float32(threshold)
+	if p.client.Connected() {
+		p.receiver.SetPeakThreshold(float32(threshold))
+	}
 }
 
 func (p *Process) SetSignalDebounce(debounce int) {
-	p.receiver.SetSignalDebounce(debounce)
+	p.signalDebounce = debounce
+	if p.client.Connected() {
+		p.receiver.SetSignalDebounce(debounce)
+	}
 }
 
 func (p *Process) onConnected(connected bool) {
@@ -109,7 +122,17 @@ func (p *Process) onConnected(connected bool) {
 		return
 	}
 
-	p.receiver.Start()
+	p.receiver.Start(48000, 512)
+	if p.threshold != 0 {
+		p.receiver.SetPeakThreshold(p.threshold)
+	}
+	if p.signalDebounce != 0 {
+		p.receiver.SetSignalDebounce(p.signalDebounce)
+	}
+	if p.tracer != nil {
+		p.receiver.SetTracer(p.tracer)
+	}
+
 	p.client.SetIQSampleRate(48000)
 	p.client.StartIQ(p.trx)
 }
@@ -123,7 +146,7 @@ var (
 	decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
 )
 
-func (p *Process) ShowPeaks(peaks []dsp.Peak[float32, int]) {
+func (p *Process) ShowPeaks(_ string, peaks []dsp.Peak[float32, int]) {
 	p.doAsync(func() {
 		p.showPeaks(peaks)
 	})
@@ -136,7 +159,7 @@ func (p *Process) showPeaks(peaks []dsp.Peak[float32, int]) {
 	}
 }
 
-func (p *Process) ShowDecode(peak dsp.Peak[float32, int]) {
+func (p *Process) ShowDecode(_ string, peak dsp.Peak[float32, int]) {
 	p.doAsync(func() {
 		p.showDecode(peak)
 	})
@@ -149,7 +172,7 @@ func (p *Process) showDecode(peak dsp.Peak[float32, int]) {
 	p.client.SetIF(p.trx, tci.VFOA, offset)
 }
 
-func (p *Process) HideDecode() {
+func (p *Process) HideDecode(_ string) {
 	p.doAsync(p.hideDecode)
 }
 
@@ -170,6 +193,7 @@ func (l *tciListener) SetDDS(trx int, frequency int) {
 	if trx != l.trx {
 		return
 	}
+
 	l.process.receiver.SetCenterFrequency(frequency)
 }
 
@@ -177,19 +201,24 @@ func (l *tciListener) SetIF(trx int, vfo tci.VFO, frequency int) {
 	if trx != l.trx {
 		return
 	}
-	l.process.receiver.SetVFOOffset(vfo, frequency)
+	if vfo == tci.VFOB {
+		return
+	}
+
+	l.process.receiver.SetVFOOffset(frequency)
 }
 
 func (l *tciListener) IQData(trx int, sampleRate tci.IQSampleRate, data []float32) {
 	if trx != l.trx {
 		return
 	}
+
 	const partCount = 4
 	partLen := len(data) / partCount
 	for i := 0; i < partCount; i++ {
 		begin := i * partLen
 		end := begin + partLen
-		l.process.receiver.IQData(tci.IQSampleRate(sampleRate), data[begin:end])
+		l.process.receiver.IQData(int(sampleRate), data[begin:end])
 	}
 }
 

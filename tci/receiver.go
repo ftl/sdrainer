@@ -2,11 +2,8 @@ package tci
 
 import (
 	"log"
-	"math"
 	"math/rand"
 	"time"
-
-	tci "github.com/ftl/tci/client"
 
 	"github.com/ftl/sdrainer/cw"
 	"github.com/ftl/sdrainer/dsp"
@@ -19,181 +16,176 @@ const (
 	iqBufferSize   = 100
 	cumulationSize = 30
 
-	defaultPeakThreshold float32 = 15
+	defaultPeakThreshold = 15
 )
 
-type Receiver struct {
-	process         *Process
+type ReceiverIndicator[T, F dsp.Number] interface {
+	ShowPeaks(receiver string, peaks []dsp.Peak[T, F])
+	ShowDecode(receiver string, peak dsp.Peak[T, F])
+	HideDecode(receiver string)
+}
+
+type Receiver[T, F dsp.Number] struct {
+	id              string
+	indicator       ReceiverIndicator[T, F]
 	trx             int
 	mode            Mode
-	peakThreshold   float32
+	peakThreshold   T
 	sampleRate      int
-	centerFrequency int
-	vfoOffset       int
 	blockSize       int
+	centerFrequency F
+	vfoOffset       F
 
-	in               chan []float32
+	in               chan []T
 	op               chan func()
-	fft              *dsp.FFT[float32]
-	frequencyMapping *dsp.FrequencyMapping[int]
-	decoder          *cw.SpectralDemodulator[float32, int]
+	fft              *dsp.FFT[T]
+	frequencyMapping *dsp.FrequencyMapping[F]
+	decoder          *cw.SpectralDemodulator[T, F]
 
 	tracer trace.Tracer
 }
 
-func NewReceiver(process *Process, trx int, mode Mode) *Receiver {
-	result := &Receiver{
-		process:       process,
+func NewReceiver[T, F dsp.Number](id string, indicator ReceiverIndicator[T, F], trx int, mode Mode) *Receiver[T, F] {
+	result := &Receiver[T, F]{
+		id:            id,
+		indicator:     indicator,
 		trx:           trx,
 		mode:          mode,
 		peakThreshold: defaultPeakThreshold,
 
-		fft: dsp.NewFFT[float32](),
+		fft: dsp.NewFFT[T](),
 
 		tracer: new(trace.NoTracer),
 	}
 	return result
 }
 
-func (h *Receiver) Start() {
-	if h.in != nil {
+func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
+	if r.in != nil {
 		return
 	}
 
-	h.in = make(chan []float32, iqBufferSize)
-	h.op = make(chan func())
-	h.sampleRate = 0
-	h.blockSize = 0
-	h.decoder = nil
-	h.frequencyMapping = nil
+	r.in = make(chan []T, iqBufferSize)
+	r.op = make(chan func())
 
-	go h.run()
+	r.sampleRate = sampleRate
+	r.blockSize = blockSize
+	r.decoder = cw.NewSpectralDemodulator[T, F](int(sampleRate), r.blockSize)
+	r.decoder.SetSignalThreshold(r.peakThreshold)
+	r.decoder.SetTracer(r.tracer)
+	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
+
+	go r.run()
 }
 
-func (h *Receiver) Stop() {
-	if h.in == nil {
+func (r *Receiver[T, F]) Stop() {
+	if r.in == nil {
 		return
 	}
 
-	h.tracer.Stop()
+	r.tracer.Stop()
 
-	close(h.in)
-	close(h.op)
-	h.in = nil
-	h.op = nil
+	close(r.in)
+	close(r.op)
+	r.in = nil
+	r.op = nil
 }
 
-func (h *Receiver) do(f func()) {
-	if h.op == nil {
+func (r *Receiver[T, F]) do(f func()) {
+	if r.op == nil {
 		f()
 	} else {
-		h.op <- f
+		r.op <- f
 	}
 }
 
-func (h *Receiver) SetTracer(tracer trace.Tracer) {
-	h.do(func() {
-		h.tracer = tracer
-		if h.decoder != nil {
-			h.decoder.SetTracer(tracer)
+func (r *Receiver[T, F]) SetTracer(tracer trace.Tracer) {
+	r.do(func() {
+		r.tracer = tracer
+		r.decoder.SetTracer(tracer)
+	})
+}
+
+func (r *Receiver[T, F]) SetPeakThreshold(threshold T) {
+	r.do(func() {
+		r.peakThreshold = threshold
+		r.decoder.SetSignalThreshold(threshold)
+	})
+}
+
+func (r *Receiver[T, F]) SetSignalDebounce(debounce int) {
+	r.do(func() {
+		r.decoder.SetSignalDebounce(debounce)
+	})
+}
+
+func (r *Receiver[T, F]) SetCenterFrequency(frequency F) {
+	r.do(func() {
+		r.centerFrequency = frequency
+		if r.decoder != nil {
+			r.decoder.Reset()
+		}
+		if r.frequencyMapping != nil {
+			r.frequencyMapping.SetCenterFrequency(frequency)
 		}
 	})
 }
 
-func (h *Receiver) SetPeakThreshold(threshold float32) {
-	h.do(func() {
-		h.peakThreshold = threshold
-		if h.decoder != nil {
-			h.decoder.SetSignalThreshold(threshold)
-		}
-	})
-}
-
-func (h *Receiver) SetSignalDebounce(debounce int) {
-	h.do(func() {
-		if h.decoder != nil {
-			h.decoder.SetSignalDebounce(debounce)
-		}
-	})
-}
-
-func (h *Receiver) SetCenterFrequency(frequency int) {
-	h.do(func() {
-		h.centerFrequency = frequency
-		if h.decoder != nil {
-			h.decoder.Reset()
-		}
-		if h.frequencyMapping != nil {
-			h.frequencyMapping.SetCenterFrequency(frequency)
-			log.Printf("frequency mapping: %s", h.frequencyMapping)
-		}
-	})
-}
-
-func (h *Receiver) CenterFrequency() int {
-	result := make(chan int)
-	h.do(func() {
-		result <- h.centerFrequency
+func (r *Receiver[T, F]) CenterFrequency() F {
+	result := make(chan F)
+	r.do(func() {
+		result <- r.centerFrequency
 	})
 	return <-result
 }
 
-func (h *Receiver) SetVFOOffset(vfo tci.VFO, offset int) {
-	if vfo == tci.VFOB {
-		return
-	}
-	h.do(func() {
-		h.vfoOffset = offset
-		if h.blockSize == 0 {
+func (r *Receiver[T, F]) SetVFOOffset(offset F) {
+	r.do(func() {
+		r.vfoOffset = offset
+		if r.blockSize == 0 {
 			return
 		}
-		if h.mode == VFOMode {
-			freq := h.vfoOffset + h.centerFrequency
-			bin := h.frequencyToBin(freq)
-			h.decoder.Attach(&dsp.Peak[float32, int]{
+		if r.mode == VFOMode {
+			freq := r.vfoOffset + r.centerFrequency
+			bin := r.frequencyToBin(freq)
+			r.decoder.Attach(&dsp.Peak[T, F]{
 				From:          max(0, bin-1),
-				To:            min(bin+1, h.blockSize-1),
+				To:            min(bin+1, r.blockSize-1),
 				FromFrequency: freq,
 				ToFrequency:   freq,
-				MaxValue:      0.1,
+				MaxValue:      1,
 			})
 		}
 	})
-	h.tracer.Start()
+	r.tracer.Start()
 }
 
-func (h *Receiver) IQData(sampleRate tci.IQSampleRate, data []float32) {
-	if h.in == nil {
+func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
+	if r.in == nil {
 		return
 	}
-	if h.sampleRate == 0 {
-		h.sampleRate = int(sampleRate)
-		h.blockSize = len(data) / 2
-		h.decoder = cw.NewSpectralDemodulator[float32, int](int(sampleRate), len(data))
-		h.decoder.SetSignalThreshold(h.peakThreshold)
-		h.decoder.SetTracer(h.tracer)
-		h.frequencyMapping = dsp.NewFrequencyMapping(h.sampleRate, h.blockSize, h.centerFrequency)
-		log.Printf("frequency mapping: %s", h.frequencyMapping)
-	} else if h.sampleRate != int(sampleRate) {
-		log.Printf("wrong incoming sample rate on trx %d: %d!", h.trx, sampleRate)
+	if r.sampleRate != int(sampleRate) {
+		log.Printf("wrong incoming sample rate on trx %d: %d!", r.trx, sampleRate)
 		return
-	} else if h.blockSize != len(data)/2 {
-		log.Printf("wrong incoming block size on trx %d: %d", h.trx, len(data))
+	}
+	if r.blockSize != len(data)/2 {
+		log.Printf("wrong incoming block size on trx %d: %d", r.trx, len(data))
+		return
 	}
 
 	select {
-	case h.in <- data:
+	case r.in <- data:
 		return
 	default:
-		log.Printf("IQ data skipped on trx %d", h.trx)
+		log.Printf("IQ data skipped on trx %d", r.trx)
 	}
 }
 
-func (h *Receiver) run() {
-	var spectrum dsp.Block[float32]
-	var psd dsp.Block[float32]
-	var cumulation dsp.Block[float32]
-	var peaks []dsp.Peak[float32, int]
+func (r *Receiver[T, F]) run() {
+	var spectrum dsp.Block[T]
+	var psd dsp.Block[T]
+	var cumulation dsp.Block[T]
+	var peaks []dsp.Peak[T, F]
 
 	cumulationCount := 0
 
@@ -202,39 +194,39 @@ func (h *Receiver) run() {
 
 	for {
 		select {
-		case op := <-h.op:
+		case op := <-r.op:
 			op()
 		case <-peakTicker.C:
-			// peaksToShow := make([]dsp.peak[float32, int], len(peaks))
+			// peaksToShow := make([]dsp.peak[T, int], len(peaks))
 			// copy(peaksToShow, peaks)
-			// h.process.ShowPeaks(peaksToShow)
-		case frame := <-h.in:
+			// r.indicator.ShowPeaks(r.id, peaksToShow)
+		case frame := <-r.in:
 			if len(frame) == 0 {
 				continue
 			}
 
-			if spectrum.Size() != h.blockSize {
-				spectrum = make([]float32, h.blockSize)
-				psd = make([]float32, h.blockSize)
-				cumulation = make([]float32, h.blockSize)
-				peaks = make([]dsp.Peak[float32, int], 0, h.blockSize)
+			if spectrum.Size() != r.blockSize {
+				spectrum = make([]T, r.blockSize)
+				psd = make([]T, r.blockSize)
+				cumulation = make([]T, r.blockSize)
+				peaks = make([]dsp.Peak[T, F], 0, r.blockSize)
 			}
 
-			shiftedMagnitude := func(fftValue complex128, blockSize int) float32 {
-				return dsp.Magnitude2dBm[float32](fftValue, blockSize) + 120
+			shiftedMagnitude := func(fftValue complex128, blockSize int) T {
+				return dsp.Magnitude2dBm[T](fftValue, blockSize) + 120
 			}
-			h.fft.IQToSpectrumAndPSD(spectrum, psd, frame, shiftedMagnitude)
-			noiseFloor := h.findNoiseFloor(psd)
+			r.fft.IQToSpectrumAndPSD(spectrum, psd, frame, shiftedMagnitude)
+			noiseFloor := r.findNoiseFloor(psd)
 
-			if h.decoder != nil && h.decoder.Attached() {
-				maxValue, _ := spectrum.Max(h.decoder.PeakRange())
+			if r.decoder.Attached() {
+				maxValue, _ := spectrum.Max(r.decoder.PeakRange())
 
-				h.decoder.Tick(maxValue, noiseFloor)
+				r.decoder.Tick(maxValue, noiseFloor)
 
-				if h.mode == RandomPeakMode && h.decoder.TimeoutExceeded() {
-					h.decoder.Detach()
-					h.process.HideDecode()
-					h.tracer.Stop()
+				if r.mode == RandomPeakMode && r.decoder.TimeoutExceeded() {
+					r.decoder.Detach()
+					r.indicator.HideDecode(r.id)
+					r.tracer.Stop()
 				}
 			}
 
@@ -244,32 +236,32 @@ func (h *Receiver) run() {
 			cumulationCount++
 
 			if cumulationCount == cumulationSize {
-				var threshold float32
-				peaks, threshold = h.detectPeaks(peaks, cumulation, cumulationSize, noiseFloor)
+				var threshold T
+				peaks, threshold = r.detectPeaks(peaks, cumulation, cumulationSize, noiseFloor)
 				_ = threshold
 
-				if h.tracer.Context() == traceSpectrum {
-					peakFrame := peaksToPeakFrame(peaks, h.blockSize)
+				if r.tracer.Context() == traceSpectrum {
+					peakFrame := peaksToPeakFrame(peaks, r.blockSize)
 					for i, v := range cumulation {
-						h.tracer.Trace(traceSpectrum, "%f;%f;%f;%f\n", v/float32(cumulationSize), threshold, noiseFloor, peakFrame[i])
+						r.tracer.Trace(traceSpectrum, "%f;%f;%f;%f\n", v/T(cumulationSize), threshold, noiseFloor, peakFrame[i])
 					}
-					h.tracer.Stop()
+					r.tracer.Stop()
 				}
 
-				if h.mode == RandomPeakMode && h.decoder != nil && len(peaks) > 0 && !h.decoder.Attached() {
+				if r.mode == RandomPeakMode && r.decoder != nil && len(peaks) > 0 && !r.decoder.Attached() {
 					peakIndex := rand.Intn(len(peaks))
 					peak := peaks[peakIndex]
 
-					peak.MaxValue = peak.MaxValue / float32(cumulationSize)
+					peak.MaxValue = peak.MaxValue / T(cumulationSize)
 					peak.From = max(0, peak.MaxBin-1)
-					peak.To = min(peak.MaxBin+1, h.blockSize-1)
-					peak.FromFrequency = h.binToFrequency(peak.From, dsp.BinFrom)
-					peak.ToFrequency = h.binToFrequency(peak.To, dsp.BinTo)
+					peak.To = min(peak.MaxBin+1, r.blockSize-1)
+					peak.FromFrequency = r.binToFrequency(peak.From, dsp.BinFrom)
+					peak.ToFrequency = r.binToFrequency(peak.To, dsp.BinTo)
 
-					h.decoder.Attach(&peak)
-					h.process.ShowDecode(peak)
+					r.decoder.Attach(&peak)
+					r.indicator.ShowDecode(r.id, peak)
 
-					h.tracer.Start()
+					r.tracer.Start()
 				}
 
 				clear(cumulation)
@@ -279,19 +271,21 @@ func (h *Receiver) run() {
 	}
 }
 
-func (h *Receiver) findNoiseFloor(psd dsp.Block[float32]) float32 {
+func (r *Receiver[T, F]) findNoiseFloor(psd dsp.Block[T]) T {
 	const edgeWidth = 70
 
 	windowSize := len(psd) / 10
-	var minValue float32 = math.MaxFloat32
-	var sum float32
+	minValue := psd[0]
+	var sum T
 	count := 0
+	first := true
 	for i := edgeWidth; i < len(psd)-edgeWidth; i++ {
 		if count == windowSize {
 			count = 0
-			mean := sum / float32(windowSize)
-			if mean < minValue {
+			mean := sum / T(windowSize)
+			if mean < minValue || first {
 				minValue = mean
+				first = false
 			}
 			sum = 0
 		}
@@ -299,22 +293,22 @@ func (h *Receiver) findNoiseFloor(psd dsp.Block[float32]) float32 {
 		count++
 	}
 
-	return dsp.PSDValue2dBm(minValue, h.blockSize) + 120
+	return dsp.PSDValue2dBm(minValue, r.blockSize) + 120
 }
 
-func (h *Receiver) detectPeaks(peaks []dsp.Peak[float32, int], spectrum dsp.Block[float32], cumulationSize int, noiseFloor float32) ([]dsp.Peak[float32, int], float32) {
+func (r *Receiver[T, F]) detectPeaks(peaks []dsp.Peak[T, F], spectrum dsp.Block[T], cumulationSize int, noiseFloor T) ([]dsp.Peak[T, F], T) {
 	peaks = peaks[:0]
 
-	threshold := h.peakThreshold + noiseFloor
-	var currentPeak *dsp.Peak[float32, int]
+	threshold := r.peakThreshold + noiseFloor
+	var currentPeak *dsp.Peak[T, F]
 	for i, v := range spectrum {
-		value := v / float32(cumulationSize)
+		value := v / T(cumulationSize)
 		if currentPeak == nil && value > threshold {
-			currentPeak = &dsp.Peak[float32, int]{From: i, MaxValue: value, MaxBin: i}
+			currentPeak = &dsp.Peak[T, F]{From: i, MaxValue: value, MaxBin: i}
 		} else if currentPeak != nil && value <= threshold {
 			currentPeak.To = i - 1
-			currentPeak.FromFrequency = h.binToFrequency(currentPeak.From, dsp.BinFrom)
-			currentPeak.ToFrequency = h.binToFrequency(currentPeak.To, dsp.BinTo)
+			currentPeak.FromFrequency = r.binToFrequency(currentPeak.From, dsp.BinFrom)
+			currentPeak.ToFrequency = r.binToFrequency(currentPeak.To, dsp.BinTo)
 			peaks = append(peaks, *currentPeak)
 			currentPeak = nil
 		} else if currentPeak != nil && currentPeak.MaxValue < value {
@@ -331,22 +325,16 @@ func (h *Receiver) detectPeaks(peaks []dsp.Peak[float32, int], spectrum dsp.Bloc
 	return peaks, threshold
 }
 
-func (h *Receiver) binToFrequency(bin int, location dsp.BinLocation) int {
-	if h.frequencyMapping == nil {
-		return h.centerFrequency
-	}
-	return h.frequencyMapping.BinToFrequency(bin, location)
+func (r *Receiver[T, F]) binToFrequency(bin int, location dsp.BinLocation) F {
+	return r.frequencyMapping.BinToFrequency(bin, location)
 }
 
-func (h *Receiver) frequencyToBin(frequency int) int {
-	if h.frequencyMapping == nil {
-		return 0
-	}
-	return h.frequencyMapping.FrequencyToBin(frequency)
+func (r *Receiver[T, F]) frequencyToBin(frequency F) int {
+	return r.frequencyMapping.FrequencyToBin(frequency)
 }
 
-func peaksToPeakFrame(peaks []dsp.Peak[float32, int], blockSize int) []float32 {
-	result := make([]float32, blockSize)
+func peaksToPeakFrame[T, F dsp.Number](peaks []dsp.Peak[T, F], blockSize int) []T {
+	result := make([]T, blockSize)
 
 	for _, p := range peaks {
 		for i := p.From; i <= p.To; i++ {
