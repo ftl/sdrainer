@@ -15,8 +15,10 @@ const (
 
 	iqBufferSize   = 100
 	cumulationSize = 30
+	dBmShift       = 120
 
 	defaultPeakThreshold = 15
+	defaultEdgeWidth     = 70
 )
 
 type ReceiverIndicator[T, F dsp.Number] interface {
@@ -31,6 +33,7 @@ type Receiver[T, F dsp.Number] struct {
 	trx             int
 	mode            Mode
 	peakThreshold   T
+	edgeWidth       int
 	sampleRate      int
 	blockSize       int
 	centerFrequency F
@@ -52,6 +55,7 @@ func NewReceiver[T, F dsp.Number](id string, indicator ReceiverIndicator[T, F], 
 		trx:           trx,
 		mode:          mode,
 		peakThreshold: defaultPeakThreshold,
+		edgeWidth:     defaultEdgeWidth,
 
 		fft: dsp.NewFFT[T](),
 
@@ -110,6 +114,12 @@ func (r *Receiver[T, F]) SetPeakThreshold(threshold T) {
 	r.do(func() {
 		r.peakThreshold = threshold
 		r.decoder.SetSignalThreshold(threshold)
+	})
+}
+
+func (r *Receiver[T, F]) SetEdgeWidth(edgeWidth int) {
+	r.do(func() {
+		r.edgeWidth = edgeWidth
 	})
 }
 
@@ -213,10 +223,12 @@ func (r *Receiver[T, F]) run() {
 			}
 
 			shiftedMagnitude := func(fftValue complex128, blockSize int) T {
-				return dsp.Magnitude2dBm[T](fftValue, blockSize) + 120
+				return dsp.Magnitude2dBm[T](fftValue, blockSize) + dBmShift
 			}
 			r.fft.IQToSpectrumAndPSD(spectrum, psd, frame, shiftedMagnitude)
-			noiseFloor := r.findNoiseFloor(psd)
+
+			psdNoiseFloor := dsp.FindNoiseFloor(psd, r.edgeWidth)
+			noiseFloor := dsp.PSDValue2dBm(psdNoiseFloor, r.blockSize) + dBmShift
 
 			if r.decoder.Attached() {
 				maxValue, _ := spectrum.Max(r.decoder.PeakRange())
@@ -269,31 +281,6 @@ func (r *Receiver[T, F]) run() {
 			}
 		}
 	}
-}
-
-func (r *Receiver[T, F]) findNoiseFloor(psd dsp.Block[T]) T {
-	const edgeWidth = 70
-
-	windowSize := len(psd) / 10
-	minValue := psd[0]
-	var sum T
-	count := 0
-	first := true
-	for i := edgeWidth; i < len(psd)-edgeWidth; i++ {
-		if count == windowSize {
-			count = 0
-			mean := sum / T(windowSize)
-			if mean < minValue || first {
-				minValue = mean
-				first = false
-			}
-			sum = 0
-		}
-		sum += psd[i]
-		count++
-	}
-
-	return dsp.PSDValue2dBm(minValue, r.blockSize) + 120
 }
 
 func (r *Receiver[T, F]) detectPeaks(peaks []dsp.Peak[T, F], spectrum dsp.Block[T], cumulationSize int, noiseFloor T) ([]dsp.Peak[T, F], T) {

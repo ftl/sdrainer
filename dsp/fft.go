@@ -139,3 +139,26 @@ func (m *FrequencyMapping[F]) FrequencyToBin(frequency F) int {
 	bin := (int(frequency) - m.fromFrequency) / m.binSize
 	return max(0, min(bin, m.blockSize-1))
 }
+
+func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) T {
+	windowSize := len(psd) / 10
+	minValue := psd[0]
+	var sum T
+	count := 0
+	first := true
+	for i := edgeWidth; i < len(psd)-edgeWidth; i++ {
+		if count == windowSize {
+			count = 0
+			mean := sum / T(windowSize)
+			if mean < minValue || first {
+				minValue = mean
+				first = false
+			}
+			sum = 0
+		}
+		sum += psd[i]
+		count++
+	}
+
+	return minValue
+}
