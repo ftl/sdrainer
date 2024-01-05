@@ -11,8 +11,6 @@ import (
 const (
 	traceDemod = "demod"
 
-	silenceTimeout = 400
-
 	defaultSignalThreshold = 15
 	defaultSignalDebounce  = 1
 )
@@ -26,8 +24,7 @@ type SpectralDemodulator[M, F dsp.Number] struct {
 	decoder         *Decoder
 	tracer          trace.Tracer
 
-	peak     *dsp.Peak[M, F]
-	lowTicks int
+	peak *dsp.Peak[M, F]
 }
 
 func NewSpectralDemodulator[M, F dsp.Number](out io.Writer, sampleRate int, blockSize int) *SpectralDemodulator[M, F] {
@@ -37,13 +34,8 @@ func NewSpectralDemodulator[M, F dsp.Number](out io.Writer, sampleRate int, bloc
 		decoder:         NewDecoder(out, sampleRate, blockSize),
 		tracer:          new(trace.NoTracer),
 	}
-	result.Reset()
 
 	return result
-}
-
-func (d *SpectralDemodulator[M, F]) Reset() {
-	d.lowTicks = 0
 }
 
 func (d *SpectralDemodulator[M, F]) SetSignalThreshold(threshold M) {
@@ -61,7 +53,6 @@ func (d *SpectralDemodulator[M, F]) SetTracer(tracer trace.Tracer) {
 
 func (d *SpectralDemodulator[M, F]) Attach(peak *dsp.Peak[M, F]) {
 	d.peak = peak
-	d.Reset()
 	log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
 }
 
@@ -82,10 +73,6 @@ func (d *SpectralDemodulator[M, F]) PeakRange() (int, int) {
 	return d.peak.From, d.peak.To
 }
 
-func (d *SpectralDemodulator[M, F]) TimeoutExceeded() bool {
-	return d.lowTicks > silenceTimeout
-}
-
 func (d *SpectralDemodulator[M, F]) Tick(value M, noiseFloor M) {
 	if !d.Attached() {
 		return
@@ -103,10 +90,4 @@ func (d *SpectralDemodulator[M, F]) Tick(value M, noiseFloor M) {
 		stateInt = 80
 	}
 	d.tracer.Trace(traceDemod, "%f;%f;%f;%d\n", noiseFloor, threshold, value, stateInt)
-
-	if debounced {
-		d.lowTicks = 0
-	} else {
-		d.lowTicks++
-	}
 }

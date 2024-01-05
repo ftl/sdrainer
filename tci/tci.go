@@ -25,9 +25,11 @@ type Process struct {
 	trx      int
 	receiver *Receiver[float32, int]
 
-	threshold      float32
-	signalDebounce int
-	tracer         trace.Tracer
+	threshold         float32
+	signalDebounce    int
+	silenceTimeout    time.Duration
+	attachmentTimeout time.Duration
+	tracer            trace.Tracer
 
 	opAsync chan func()
 	close   chan struct{}
@@ -53,7 +55,7 @@ func New(host string, trx int, mode ReceiverMode, traceTCI bool) (*Process, erro
 		closed:  make(chan struct{}),
 	}
 	result.listener = &tciListener{process: result, trx: result.trx}
-	result.receiver = NewReceiver[float32, int]("", result, mode)
+	result.receiver = NewReceiver[float32, int]("", mode, WallClock, result)
 	go result.run()
 
 	client.Notify(result.listener)
@@ -103,6 +105,20 @@ func (p *Process) SetThreshold(threshold int) {
 	}
 }
 
+func (p *Process) SetSilenceTimeout(timeout time.Duration) {
+	p.silenceTimeout = timeout
+	if p.client.Connected() {
+		p.receiver.SetSilenceTimeout(timeout)
+	}
+}
+
+func (p *Process) SetAttachmentTimeout(timeout time.Duration) {
+	p.attachmentTimeout = timeout
+	if p.client.Connected() {
+		p.receiver.SetAttachmentTimeout(timeout)
+	}
+}
+
 func (p *Process) SetSignalDebounce(debounce int) {
 	p.signalDebounce = debounce
 	if p.client.Connected() {
@@ -121,6 +137,12 @@ func (p *Process) onConnected(connected bool) {
 	}
 	if p.signalDebounce != 0 {
 		p.receiver.SetSignalDebounce(p.signalDebounce)
+	}
+	if p.silenceTimeout > 0 {
+		p.receiver.SetSilenceTimeout(p.silenceTimeout)
+	}
+	if p.attachmentTimeout > 0 {
+		p.receiver.SetAttachmentTimeout(p.attachmentTimeout)
 	}
 	if p.tracer != nil {
 		p.receiver.SetTracer(p.tracer)

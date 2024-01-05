@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -12,11 +13,13 @@ import (
 )
 
 var tciFlags = struct {
-	host      string
-	trx       int
-	mode      string
-	threshold int
-	debounce  int
+	host              string
+	trx               int
+	mode              string
+	threshold         int
+	debounce          int
+	silenceTimeout    time.Duration
+	attachmentTimeout time.Duration
 
 	traceTCI         bool
 	traceContext     string
@@ -37,6 +40,8 @@ func init() {
 	tciCmd.Flags().StringVar(&tciFlags.mode, "mode", "vfo", "vfo: decode at the frequency of VFO A, random: decode a random signal in the spectrum")
 	tciCmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
 	tciCmd.Flags().IntVar(&tciFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal detection")
+	tciCmd.Flags().DurationVar(&tciFlags.silenceTimeout, "silence", 10*time.Second, "the time of silence until the next random peak is selected")
+	tciCmd.Flags().DurationVar(&tciFlags.attachmentTimeout, "busy", 1*time.Minute, "the time of decoding a busy signal until the next random peak is selected")
 
 	tciCmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
 	tciCmd.Flags().StringVar(&tciFlags.traceContext, "trace", "", "spectrum | demod | decode")
@@ -49,6 +54,9 @@ func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 	process.SetThreshold(tciFlags.threshold)
+	process.SetSilenceTimeout(tciFlags.silenceTimeout)
+	process.SetAttachmentTimeout(tciFlags.attachmentTimeout)
+	process.SetSignalDebounce(tciFlags.debounce)
 
 	tracer, ok := createTracer()
 	if ok {
