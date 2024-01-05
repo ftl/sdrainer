@@ -182,7 +182,9 @@ func (p *Process) ShowDecode(_ string, peak dsp.Peak[float32, int]) {
 
 func (p *Process) showDecode(peak dsp.Peak[float32, int]) {
 	p.client.DeleteSpot(decodeLabel)
+	p.client.AddSpot(">", tci.ModeCW, peak.FromFrequency, decodeColor, "SDRainer")
 	p.client.AddSpot(decodeLabel, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
+	p.client.AddSpot("<", tci.ModeCW, peak.ToFrequency, decodeColor, "SDRainer")
 	offset := peak.CenterFrequency() - p.receiver.CenterFrequency()
 	p.client.SetIF(p.trx, tci.VFOA, offset)
 }
@@ -192,7 +194,9 @@ func (p *Process) HideDecode(_ string) {
 }
 
 func (p *Process) hideDecode() {
+	p.client.DeleteSpot(">")
 	p.client.DeleteSpot(decodeLabel)
+	p.client.DeleteSpot("<")
 }
 
 type tciListener struct {
