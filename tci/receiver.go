@@ -282,31 +282,32 @@ func (r *Receiver[T, F]) run() {
 			cumulationCount++
 
 			if cumulationCount == cumulationSize {
-				threshold := r.peakThreshold + noiseFloor
-				peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
+				if !r.demodulator.Attached() {
+					threshold := r.peakThreshold + noiseFloor
+					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
 
-				if r.tracer.Context() == traceSpectrum {
-					peakFrame := peaksToPeakFrame(peaks, r.blockSize)
-					for i, v := range cumulation {
-						r.tracer.Trace(traceSpectrum, "%f;%f;%f;%f\n", v/T(cumulationSize), threshold, noiseFloor, peakFrame[i])
+					if r.tracer.Context() == traceSpectrum {
+						peakFrame := peaksToPeakFrame(peaks, r.blockSize)
+						for i, v := range cumulation {
+							r.tracer.Trace(traceSpectrum, "%f;%f;%f;%f\n", v/T(cumulationSize), threshold, noiseFloor, peakFrame[i])
+						}
+						r.tracer.Stop()
 					}
-					r.tracer.Stop()
-				}
 
-				if r.mode == RandomPeakMode && len(peaks) > 0 && !r.demodulator.Attached() {
-					peakIndex := rand.Intn(len(peaks))
-					peak := peaks[peakIndex]
+					if r.mode == RandomPeakMode && len(peaks) > 0 {
+						peakIndex := rand.Intn(len(peaks))
+						peak := peaks[peakIndex]
 
-					peak.MaxValue = peak.MaxValue / T(cumulationSize)
-					peak.From = max(0, peak.MaxBin-1)
-					peak.To = min(peak.MaxBin+1, r.blockSize-1)
-					peak.FromFrequency = r.frequencyMapping.BinToFrequency(peak.From, dsp.BinFrom)
-					peak.ToFrequency = r.frequencyMapping.BinToFrequency(peak.To, dsp.BinTo)
+						peak.MaxValue = peak.MaxValue / T(cumulationSize)
+						peak.From = max(0, peak.MaxBin-1)
+						peak.To = min(peak.MaxBin+1, r.blockSize-1)
+						peak.FromFrequency = r.frequencyMapping.BinToFrequency(peak.From, dsp.BinFrom)
+						peak.ToFrequency = r.frequencyMapping.BinToFrequency(peak.To, dsp.BinTo)
 
-					r.attachDemodulator(&peak)
-					r.indicator.ShowDecode(r.id, peak)
+						r.attachDemodulator(&peak)
 
-					r.tracer.Start()
+						r.tracer.Start()
+					}
 				}
 
 				clear(cumulation)
@@ -320,6 +321,7 @@ func (r *Receiver[T, F]) attachDemodulator(peak *dsp.Peak[T, F]) {
 	r.demodulator.Attach(peak)
 	r.lastAttach = r.clock.Now()
 	r.textProcessor.Reset()
+	r.indicator.ShowDecode(r.id, *peak)
 }
 
 func (r *Receiver[T, F]) demodulatorTimeoutExceeded() bool {
