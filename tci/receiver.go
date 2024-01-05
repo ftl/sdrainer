@@ -3,6 +3,7 @@ package tci
 import (
 	"log"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/ftl/sdrainer/cw"
@@ -79,10 +80,11 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 
 	r.sampleRate = sampleRate
 	r.blockSize = blockSize
-	r.demodulator = cw.NewSpectralDemodulator[T, F](int(sampleRate), r.blockSize)
+	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
+
+	r.demodulator = cw.NewSpectralDemodulator[T, F](os.Stdout, int(sampleRate), r.blockSize)
 	r.demodulator.SetSignalThreshold(r.peakThreshold)
 	r.demodulator.SetTracer(r.tracer)
-	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
 
 	go r.run()
 }

@@ -1,8 +1,8 @@
 package cw
 
 import (
+	"io"
 	"log"
-	"os"
 
 	"github.com/ftl/sdrainer/dsp"
 	"github.com/ftl/sdrainer/trace"
@@ -30,11 +30,11 @@ type SpectralDemodulator[M, F dsp.Number] struct {
 	lowTicks int
 }
 
-func NewSpectralDemodulator[M, F dsp.Number](sampleRate int, blockSize int) *SpectralDemodulator[M, F] {
+func NewSpectralDemodulator[M, F dsp.Number](out io.Writer, sampleRate int, blockSize int) *SpectralDemodulator[M, F] {
 	result := &SpectralDemodulator[M, F]{
 		signalThreshold: defaultSignalThreshold,
 		signalDebouncer: dsp.NewBoolDebouncer(defaultSignalDebounce),
-		decoder:         NewDecoder(os.Stdout, sampleRate, blockSize),
+		decoder:         NewDecoder(out, sampleRate, blockSize),
 		tracer:          new(trace.NoTracer),
 	}
 	result.Reset()
