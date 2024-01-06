@@ -167,13 +167,13 @@ func (d *BoolDebouncer) Debounce(rawState bool) bool {
 	}
 
 	if rawState != d.lastRawState {
-		d.stateCount = 0
+		d.stateCount = 1
 	} else {
 		d.stateCount++
 	}
 	d.lastRawState = rawState
 
-	if d.stateCount > d.threshold {
+	if d.stateCount >= d.threshold {
 		if rawState != d.effectiveState {
 			d.effectiveState = rawState
 		}

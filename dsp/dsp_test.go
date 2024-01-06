@@ -9,6 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBoolDebouncer(t *testing.T) {
+	d := NewBoolDebouncer(3)
+
+	assert.False(t, d.Debounce(true), "1")
+	assert.False(t, d.Debounce(true), "2")
+	assert.True(t, d.Debounce(true), "3")
+	assert.True(t, d.Debounce(true), "4")
+	assert.True(t, d.Debounce(false), "5")
+	assert.True(t, d.Debounce(false), "6")
+	assert.False(t, d.Debounce(false), "7")
+}
+
 func TestFilter_SignalState(t *testing.T) {
 	sampleRate := 48000
 	pitch := 700.0
