@@ -17,6 +17,7 @@ const (
 	defaultHostname = "localhost"
 	defaultPort     = 40001
 	timeout         = 10 * time.Second
+	partCount       = 4
 )
 
 type Process struct {
@@ -131,7 +132,7 @@ func (p *Process) onConnected(connected bool) {
 		return
 	}
 
-	p.receiver.Start(48000, 512)
+	p.receiver.Start(48000, 2048/partCount)
 	if p.threshold != 0 {
 		p.receiver.SetPeakThreshold(p.threshold)
 	}
@@ -169,8 +170,8 @@ func (p *Process) ShowPeaks(_ string, peaks []dsp.Peak[float32, int]) {
 
 func (p *Process) showPeaks(peaks []dsp.Peak[float32, int]) {
 	for _, peak := range peaks {
-		label := fmt.Sprintf("%d w%d", peak.CenterFrequency(), peak.Width())
-		p.client.AddSpot(label, tci.ModeCW, peak.CenterFrequency(), peakColor, "SDRainer")
+		label := fmt.Sprintf("%d w%d", peak.SignalFrequency, peak.Width())
+		p.client.AddSpot(label, tci.ModeCW, peak.SignalFrequency, peakColor, "SDRainer")
 	}
 }
 
@@ -185,7 +186,7 @@ func (p *Process) showDecode(peak dsp.Peak[float32, int]) {
 	p.client.AddSpot(">", tci.ModeCW, peak.FromFrequency, decodeColor, "SDRainer")
 	p.client.AddSpot(decodeLabel, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
 	p.client.AddSpot("<", tci.ModeCW, peak.ToFrequency, decodeColor, "SDRainer")
-	offset := peak.CenterFrequency() - p.receiver.CenterFrequency()
+	offset := peak.SignalFrequency - p.receiver.CenterFrequency()
 	p.client.SetIF(p.trx, tci.VFOA, offset)
 }
 
@@ -232,7 +233,6 @@ func (l *tciListener) IQData(trx int, sampleRate tci.IQSampleRate, data []float3
 		return
 	}
 
-	const partCount = 4
 	partLen := len(data) / partCount
 	for i := 0; i < partCount; i++ {
 		begin := i * partLen

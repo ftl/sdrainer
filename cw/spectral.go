@@ -73,6 +73,10 @@ func (d *SpectralDemodulator[M, F]) PeakRange() (int, int) {
 	return d.peak.From, d.peak.To
 }
 
+func (d *SpectralDemodulator[M, F]) Peak() *dsp.Peak[M, F] {
+	return d.peak
+}
+
 func (d *SpectralDemodulator[M, F]) Tick(value M, noiseFloor M) {
 	if !d.Attached() {
 		return

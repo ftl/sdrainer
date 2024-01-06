@@ -14,8 +14,10 @@ func TestBinToSpectrumIndex(t *testing.T) {
 		expected  int
 	}{
 		{blockSize: 512, bin: 0, expected: 256},
+		{blockSize: 512, bin: 1, expected: 257},
 		{blockSize: 512, bin: 255, expected: 511},
 		{blockSize: 512, bin: 256, expected: 0},
+		{blockSize: 512, bin: 257, expected: 1},
 		{blockSize: 512, bin: 511, expected: 255},
 	}
 	for _, tc := range tt {
@@ -30,24 +32,19 @@ func TestFrequencyMapping(t *testing.T) {
 	sampleRate := 48000
 	blockSize := 512
 	centerFrequency := 7020000
-	binSize := sampleRate / blockSize
 	tt := []struct {
-		bin  int
-		from int
-		to   int
+		bin    int
+		center int
 	}{
-		{0, centerFrequency - sampleRate/2, centerFrequency - sampleRate/2 + binSize},
-		{256, centerFrequency, centerFrequency + binSize},
-		{511, centerFrequency + sampleRate/2 - binSize, centerFrequency + sampleRate/2},
+		{0, centerFrequency - sampleRate/2},
+		{256, centerFrequency},
 	}
 	for _, tc := range tt {
 		t.Run(fmt.Sprintf("%d", tc.bin), func(t *testing.T) {
 			m := NewFrequencyMapping[int](sampleRate, blockSize, centerFrequency)
 
-			assert.Equal(t, tc.bin, m.FrequencyToBin(tc.from), "from to bin")
-			assert.Equal(t, tc.bin, m.FrequencyToBin(tc.to), "to to bin")
-			assert.Equal(t, tc.from-(tc.bin%2), m.BinToFrequency(tc.bin, BinFrom), "bin to from")
-			assert.Equal(t, tc.to, m.BinToFrequency(tc.bin, BinTo), "bin to to")
+			assert.Equal(t, tc.bin, m.FrequencyToBin(tc.center), "center to bin")
+			assert.Equal(t, tc.center, m.BinToFrequency(tc.bin, BinCenter), "bin to center")
 		})
 	}
 }

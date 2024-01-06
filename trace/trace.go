@@ -6,12 +6,14 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 )
 
 type Tracer interface {
 	Context() string
 	Start()
 	Trace(context string, format string, args ...any)
+	TraceBlock(context string, block []any)
 	Stop()
 }
 
@@ -20,6 +22,7 @@ type NoTracer struct{}
 func (t *NoTracer) Context() string              { return "" }
 func (t *NoTracer) Start()                       {}
 func (t *NoTracer) Trace(string, string, ...any) {}
+func (t *NoTracer) TraceBlock(string, []any)     {}
 func (t *NoTracer) Stop()                        {}
 
 type FileTracer struct {
@@ -61,6 +64,23 @@ func (t *FileTracer) Trace(context string, format string, args ...any) {
 	}
 
 	fmt.Fprintf(t.out, format, args...)
+}
+
+func (t *FileTracer) TraceBlock(context string, block []any) {
+	if t.out == nil {
+		return
+	}
+	if context != t.context {
+		return
+	}
+
+	fields := make([]string, len(block))
+	for i := range fields {
+		fields[i] = fmt.Sprintf("%v", block)
+	}
+	line := strings.Join(fields, ";")
+
+	fmt.Fprintln(t.out, line)
 }
 
 func (t *FileTracer) Stop() {
@@ -105,6 +125,7 @@ func (t *UDPTracer) Start() {
 		t.conn = nil
 		log.Printf("cannot start trace: %v", err)
 	}
+	t.conn.SetWriteBuffer(16384)
 }
 
 func (t *UDPTracer) Trace(context string, format string, args ...any) {
@@ -115,7 +136,30 @@ func (t *UDPTracer) Trace(context string, format string, args ...any) {
 		return
 	}
 
-	fmt.Fprintf(t.conn, format, args...)
+	_, err := fmt.Fprintf(t.conn, format, args...)
+	if err != nil {
+		log.Printf("cannot trace line: %v", err)
+	}
+}
+
+func (t *UDPTracer) TraceBlock(context string, block []any) {
+	if t.conn == nil {
+		return
+	}
+	if context != t.context {
+		return
+	}
+
+	fields := make([]string, len(block))
+	for i := range fields {
+		fields[i] = fmt.Sprintf("%v", block[i])
+	}
+	line := strings.Join(fields, ";")
+
+	_, err := fmt.Fprintln(t.conn, line)
+	if err != nil {
+		log.Printf("cannot trace block (%d): %v", len(line), err)
+	}
 }
 
 func (t *UDPTracer) Stop() {

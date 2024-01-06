@@ -15,8 +15,9 @@ const (
 	traceSpectrum = "spectrum"
 
 	iqBufferSize   = 100
-	cumulationSize = 30
+	cumulationSize = 50
 	dBmShift       = 120
+	peakPadding    = 0
 
 	defaultPeakThreshold = 15
 	defaultEdgeWidth     = 70
@@ -190,18 +191,13 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 		}
 		if r.mode == VFOMode {
 			freq := r.vfoOffset + r.centerFrequency
-			bin := r.frequencyMapping.FrequencyToBin(freq)
-			peak := dsp.Peak[T, F]{
-				From:          max(0, bin-1),
-				To:            min(bin+1, r.blockSize-1),
-				FromFrequency: freq,
-				ToFrequency:   freq,
-				MaxValue:      1,
-			}
+			peak := r.newPeakCenteredOnFrequency(freq)
+			peak.SignalValue = 80
 			r.attachDemodulator(&peak)
+
+			r.tracer.Start()
 		}
 	})
-	r.tracer.Start()
 }
 
 func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
@@ -257,12 +253,13 @@ func (r *Receiver[T, F]) run() {
 			}
 
 			shiftedMagnitude := func(fftValue complex128, blockSize int) T {
-				return dsp.Magnitude2dBm[T](fftValue, blockSize) + dBmShift
+				return dsp.MagnitudeIndB[T](fftValue, blockSize) + dBmShift
 			}
 			r.fft.IQToSpectrumAndPSD(spectrum, psd, frame, shiftedMagnitude)
 
 			psdNoiseFloor := dsp.FindNoiseFloor(psd, r.edgeWidth)
-			noiseFloor := dsp.PSDValue2dBm(psdNoiseFloor, r.blockSize) + dBmShift
+			noiseFloor := dsp.PSDValueIndB(psdNoiseFloor, r.blockSize) + dBmShift
+			threshold := r.peakThreshold + noiseFloor
 
 			if r.demodulator.Attached() {
 				maxValue, _ := spectrum.Max(r.demodulator.PeakRange())
@@ -282,31 +279,29 @@ func (r *Receiver[T, F]) run() {
 			cumulationCount++
 
 			if cumulationCount == cumulationSize {
-				if !r.demodulator.Attached() {
-					threshold := r.peakThreshold + noiseFloor
+				if r.mode == RandomPeakMode && !r.demodulator.Attached() {
 					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
 
-					if r.tracer.Context() == traceSpectrum {
-						peakFrame := peaksToPeakFrame(peaks, r.blockSize)
-						for i, v := range cumulation {
-							r.tracer.Trace(traceSpectrum, "%f;%f;%f;%f\n", v/T(cumulationSize), threshold, noiseFloor, peakFrame[i])
-						}
-						r.tracer.Stop()
-					}
-
-					if r.mode == RandomPeakMode && len(peaks) > 0 {
+					if len(peaks) > 0 {
 						peakIndex := rand.Intn(len(peaks))
 						peak := peaks[peakIndex]
+						centeredPeak := r.newPeakCenteredOnSignal(peak)
+						log.Printf("selected peak %#v -> %#v", peak, centeredPeak)
 
-						peak.MaxValue = peak.MaxValue / T(cumulationSize)
-						peak.From = max(0, peak.MaxBin-1)
-						peak.To = min(peak.MaxBin+1, r.blockSize-1)
-						peak.FromFrequency = r.frequencyMapping.BinToFrequency(peak.From, dsp.BinFrom)
-						peak.ToFrequency = r.frequencyMapping.BinToFrequency(peak.To, dsp.BinTo)
-
-						r.attachDemodulator(&peak)
-
+						r.attachDemodulator(&centeredPeak)
 						r.tracer.Start()
+					}
+				}
+
+				if r.tracer.Context() == traceSpectrum {
+					r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
+					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
+
+					if r.demodulator.Attached() {
+						peak := r.demodulator.Peak()
+						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", peak.SignalBin)
+					} else {
+						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", -1)
 					}
 				}
 
@@ -315,6 +310,42 @@ func (r *Receiver[T, F]) run() {
 			}
 		}
 	}
+}
+
+func scaledValuesForTracing[T dsp.Number](block dsp.Block[T], scale float64) []any {
+	result := make([]any, len(block))
+	for i := range result {
+		result[i] = float64(block[i]) * scale
+	}
+	return result
+}
+
+func (r *Receiver[T, F]) newPeakCenteredOnSignal(peak dsp.Peak[T, F]) dsp.Peak[T, F] {
+	result := r.newPeakCenteredOnBin(peak.SignalBin)
+	result.SignalFrequency = peak.SignalFrequency
+	result.SignalValue = peak.SignalValue
+	result.SignalBin = peak.SignalBin
+	return result
+}
+
+func (r *Receiver[T, F]) newPeakCenteredOnFrequency(frequency F) dsp.Peak[T, F] {
+	bin := r.frequencyMapping.FrequencyToBin(frequency)
+	result := r.newPeakCenteredOnBin(bin)
+	result.SignalBin = bin
+	result.SignalFrequency = frequency
+	return result
+}
+
+func (r *Receiver[T, F]) newPeakCenteredOnBin(centerBin int) dsp.Peak[T, F] {
+	peak := dsp.Peak[T, F]{
+		From: max(0, centerBin-peakPadding),
+		To:   min(centerBin+peakPadding, r.blockSize-1),
+	}
+	peak.FromFrequency = r.frequencyMapping.BinToFrequency(peak.From, dsp.BinFrom)
+	peak.ToFrequency = r.frequencyMapping.BinToFrequency(peak.To, dsp.BinTo)
+	peak.SignalFrequency = peak.CenterFrequency()
+
+	return peak
 }
 
 func (r *Receiver[T, F]) attachDemodulator(peak *dsp.Peak[T, F]) {
@@ -370,16 +401,4 @@ func (p *TextProcessor) LastWrite() time.Time {
 func (p *TextProcessor) Write(bytes []byte) (n int, err error) {
 	p.lastWrite = p.clock.Now()
 	return os.Stdout.Write(bytes)
-}
-
-func peaksToPeakFrame[T, F dsp.Number](peaks []dsp.Peak[T, F], blockSize int) []T {
-	result := make([]T, blockSize)
-
-	for _, p := range peaks {
-		for i := p.From; i <= p.To; i++ {
-			result[i] = p.MaxValue
-		}
-	}
-
-	return result
 }

@@ -2,6 +2,7 @@ package dsp
 
 import (
 	"fmt"
+	"log"
 	"math"
 
 	"github.com/mjibson/go-dsp/fft"
@@ -29,10 +30,10 @@ func (f *FFT[T]) IQToSpectrumAndPSD(spectrum []T, psd []T, iqSamples []T, projec
 		panic(fmt.Sprintf("the spectrum slice must have the same length as the FFT's result: %d", blockSize))
 	}
 
-	for i := range fftResult {
+	for i, value := range fftResult {
 		k := binToSpectrumIndex(i, blockSize)
-		spectrum[k] = projection(fftResult[i], blockSize)
-		psd[k] = T(math.Pow(real(fftResult[i]), 2) + math.Pow(imag(fftResult[i]), 2))
+		spectrum[k] = projection(value, blockSize)
+		psd[k] = PSD[T](value, blockSize)
 	}
 }
 
@@ -45,20 +46,15 @@ func (f *FFT[T]) IQToSpectrum(spectrum []T, iqSamples []T, projection func(compl
 		panic(fmt.Sprintf("the spectrum slice must have the same length as the FFT's result: %d", blockSize))
 	}
 
-	for i := range fftResult {
+	for i, value := range fftResult {
 		k := binToSpectrumIndex(i, blockSize)
-		spectrum[k] = projection(fftResult[i], blockSize)
+		spectrum[k] = projection(value, blockSize)
 	}
 }
 
 func binToSpectrumIndex(bin int, blockSize int) int {
 	centerBin := blockSize / 2
-
-	if bin >= centerBin {
-		return (bin - centerBin)
-	} else {
-		return (bin + centerBin)
-	}
+	return (bin + centerBin) % blockSize
 }
 
 func (f *FFT[T]) setSamplesFromIQ(iqSamples []T) {
@@ -73,24 +69,28 @@ func (f *FFT[T]) setSamplesFromIQ(iqSamples []T) {
 	}
 }
 
+func PSD[T Number](fftValue complex128, blockSize int) T {
+	return T(math.Pow(real(fftValue), 2) + math.Pow(imag(fftValue), 2))
+}
+
 func Magnitude[T Number](fftValue complex128, blockSize int) T {
-	return T(math.Sqrt(math.Pow(real(fftValue), 2) + math.Pow(imag(fftValue), 2)))
+	return T(math.Sqrt(float64(PSD[T](fftValue, blockSize))))
 }
 
-func Magnitude2dBm[T Number](fftValue complex128, blockSize int) T {
-	return T(10.0 * math.Log10(20.0*(math.Pow(real(fftValue), 2)+math.Pow(imag(fftValue), 2))/math.Pow(float64(blockSize), 2)))
+func MagnitudeIndB[T Number](fftValue complex128, blockSize int) T {
+	return T(10.0 * math.Log10(20.0*float64(PSD[T](fftValue, blockSize))/math.Pow(float64(blockSize), 2)))
 }
 
-func PSDValue2dBm[T Number](psdValue T, blockSize int) T {
+func PSDValueIndB[T Number](psdValue T, blockSize int) T {
 	return T(10.0 * math.Log10(20.0*float64(psdValue)/math.Pow(float64(blockSize), 2)))
 }
 
 type BinLocation float64
 
 const (
-	BinFrom   BinLocation = 0
-	BinCenter BinLocation = 0.5
-	BinTo     BinLocation = 1
+	BinFrom   BinLocation = -0.5
+	BinCenter BinLocation = 0
+	BinTo     BinLocation = 0.5
 )
 
 type FrequencyMapping[F Number] struct {
@@ -135,6 +135,79 @@ func (m *FrequencyMapping[F]) FrequencyToBin(frequency F) int {
 	return max(0, min(bin, m.blockSize-1))
 }
 
+// Block represents a block of samples that are processed as one unit.
+type Block[T Number] []T
+
+// Size returns the blocksize.
+func (b Block[T]) Size() int {
+	return len(b)
+}
+
+// Subblock returns the given section of this block.
+func (b Block[T]) Subblock(from, to int) Block[T] {
+	return b[from : to+1]
+}
+
+// Sum of the values in the given section of this block.
+func (b Block[T]) Sum(from, to int) T {
+	var sum T
+	for i := from; i <= to; i++ {
+		sum += b[i]
+	}
+	return sum
+}
+
+// Mean of the values in the given section of this block.
+func (b Block[T]) Mean(from, to int) T {
+	return b.Sum(from, to) / T(to-from+1)
+}
+
+// Max imum value in the given section of this block.
+func (b Block[T]) Max(from, to int) (T, int) {
+	maxValue := b[0]
+	maxI := 0
+	for i := from; i <= to; i++ {
+		if maxValue < b[i] {
+			maxValue = b[i]
+			maxI = i
+		}
+	}
+	return maxValue, maxI
+}
+
+// Peak represents a section in a block that contains a peak.
+// M is used to represent magnitude values in the spectrum, F is the type used to represent frequencies
+type Peak[M, F Number] struct {
+	From          int
+	To            int
+	FromFrequency F
+	ToFrequency   F
+
+	SignalFrequency F
+	SignalValue     M
+	SignalBin       int
+}
+
+// Center index
+func (p Peak[T, F]) Center() int {
+	return p.From + ((p.To - p.From) / 2)
+}
+
+// CenterFrequency, based on the FromFrequency and ToFrequency fields. Those fields must be filled with meaningful values.
+func (p Peak[T, F]) CenterFrequency() F {
+	return p.FromFrequency + (p.WidthHz() / 2)
+}
+
+// Width in bins.
+func (p Peak[T, F]) Width() int {
+	return (p.To - p.From) + 1
+}
+
+// WidthHz in Hz, based on the FromFrequency and ToFrequency fields. Those fiels must be filled with meaningful values.
+func (p Peak[T, F]) WidthHz() F {
+	return p.ToFrequency - p.FromFrequency
+}
+
 func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) T {
 	windowSize := len(psd) / 10
 	minValue := psd[0]
@@ -160,28 +233,54 @@ func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) T {
 
 func FindPeaks[T, F Number](peaks []Peak[T, F], spectrum Block[T], cumulationSize int, threshold T, frequencyMapping *FrequencyMapping[F]) []Peak[T, F] {
 	peaks = peaks[:0]
+	log.Printf("frequency mapping: %s", frequencyMapping)
 
 	var currentPeak *Peak[T, F]
 	for i, v := range spectrum {
 		value := v / T(cumulationSize)
 		if currentPeak == nil && value > threshold {
-			currentPeak = &Peak[T, F]{From: i, MaxValue: value, MaxBin: i}
+			currentPeak = &Peak[T, F]{From: i, SignalValue: value, SignalBin: i}
 		} else if currentPeak != nil && value <= threshold {
 			currentPeak.To = i - 1
 			currentPeak.FromFrequency = frequencyMapping.BinToFrequency(currentPeak.From, BinFrom)
 			currentPeak.ToFrequency = frequencyMapping.BinToFrequency(currentPeak.To, BinTo)
+			centerCorrection := PeakCenterCorrection[T, F](currentPeak.SignalBin, spectrum)
+			currentPeak.SignalFrequency = frequencyMapping.BinToFrequency(currentPeak.SignalBin, centerCorrection)
 			peaks = append(peaks, *currentPeak)
 			currentPeak = nil
-		} else if currentPeak != nil && currentPeak.MaxValue < value {
-			currentPeak.MaxValue = value
-			currentPeak.MaxBin = i
+		} else if currentPeak != nil && currentPeak.SignalValue < value {
+			currentPeak.SignalValue = value
+			currentPeak.SignalBin = i
 		}
 	}
 
 	if currentPeak != nil {
 		currentPeak.To = len(spectrum) - 1
+		currentPeak.FromFrequency = frequencyMapping.BinToFrequency(currentPeak.From, BinFrom)
+		currentPeak.ToFrequency = frequencyMapping.BinToFrequency(currentPeak.To, BinTo)
+		centerCorrection := PeakCenterCorrection[T, F](currentPeak.SignalBin, spectrum)
+		currentPeak.SignalFrequency = frequencyMapping.BinToFrequency(currentPeak.SignalBin, centerCorrection)
 		peaks = append(peaks, *currentPeak)
 	}
 
 	return peaks
+}
+
+func PeakCenterCorrection[T, F Number](bin int, spectrum Block[T]) BinLocation {
+	// see https://dspguru.com/dsp/howtos/how-to-interpolate-fft-peak/
+	if bin <= 0 || bin >= spectrum.Size()-1 {
+		return 0
+	}
+
+	value := func(i int) float64 {
+		return math.Abs(float64(spectrum[i]))
+	}
+
+	// quadratic interpolation
+	y1 := value(bin - 1)
+	y2 := value(bin)
+	y3 := value(bin + 1)
+	result := (y3 - y1) / (2 * (2*y2 - y1 - y3))
+
+	return BinLocation(result)
 }
