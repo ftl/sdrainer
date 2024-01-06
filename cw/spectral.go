@@ -53,6 +53,7 @@ func (d *SpectralDemodulator[M, F]) SetTracer(tracer trace.Tracer) {
 
 func (d *SpectralDemodulator[M, F]) Attach(peak *dsp.Peak[M, F]) {
 	d.peak = peak
+	d.decoder.Reset()
 	log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
 }
 
