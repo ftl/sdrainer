@@ -10,6 +10,7 @@ import (
 	tci "github.com/ftl/tci/client"
 
 	"github.com/ftl/sdrainer/dsp"
+	"github.com/ftl/sdrainer/rx"
 	"github.com/ftl/sdrainer/trace"
 )
 
@@ -24,7 +25,7 @@ type Process struct {
 	client   *tci.Client
 	listener *tciListener
 	trx      int
-	receiver *Receiver[float32, int]
+	receiver *rx.Receiver[float32, int]
 
 	threshold         float32
 	signalDebounce    int
@@ -37,7 +38,7 @@ type Process struct {
 	closed  chan struct{}
 }
 
-func New(host string, trx int, mode ReceiverMode, traceTCI bool) (*Process, error) {
+func New(host string, trx int, mode rx.ReceiverMode, traceTCI bool) (*Process, error) {
 	tcpHost, err := parseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)
@@ -56,7 +57,7 @@ func New(host string, trx int, mode ReceiverMode, traceTCI bool) (*Process, erro
 		closed:  make(chan struct{}),
 	}
 	result.listener = &tciListener{process: result, trx: result.trx}
-	result.receiver = NewReceiver[float32, int]("", mode, WallClock, result)
+	result.receiver = rx.NewReceiver[float32, int]("", mode, rx.WallClock, result)
 	go result.run()
 
 	client.Notify(result.listener)

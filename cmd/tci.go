@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/ftl/sdrainer/rx"
 	"github.com/ftl/sdrainer/tci"
 	"github.com/ftl/sdrainer/trace"
 )
@@ -49,7 +50,7 @@ func init() {
 }
 
 func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
-	process, err := tci.New(tciFlags.host, tciFlags.trx, tci.ReceiverMode(strings.ToLower(tciFlags.mode)), tciFlags.traceTCI)
+	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.ReceiverMode(strings.ToLower(tciFlags.mode)), tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}

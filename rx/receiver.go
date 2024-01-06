@@ -1,4 +1,4 @@
-package tci
+package rx
 
 import (
 	"log"
