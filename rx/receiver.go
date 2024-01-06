@@ -18,6 +18,7 @@ const (
 	cumulationSize = 50
 	dBmShift       = 120
 	peakPadding    = 0
+	noiseWindow    = 30
 
 	defaultPeakThreshold = 15
 	defaultEdgeWidth     = 70
@@ -226,6 +227,7 @@ func (r *Receiver[T, F]) run() {
 	var psd dsp.Block[T]
 	var cumulation dsp.Block[T]
 	var peaks []dsp.Peak[T, F]
+	noiseFloorMean := dsp.NewRollingMean[T](noiseWindow)
 
 	cumulationCount := 0
 
@@ -258,7 +260,7 @@ func (r *Receiver[T, F]) run() {
 			r.fft.IQToSpectrumAndPSD(spectrum, psd, frame, shiftedMagnitude)
 
 			psdNoiseFloor := dsp.FindNoiseFloor(psd, r.edgeWidth)
-			noiseFloor := dsp.PSDValueIndB(psdNoiseFloor, r.blockSize) + dBmShift
+			noiseFloor := noiseFloorMean.Put(dsp.PSDValueIndB(psdNoiseFloor, r.blockSize) + dBmShift)
 			threshold := r.peakThreshold + noiseFloor
 
 			if r.demodulator.Attached() {
