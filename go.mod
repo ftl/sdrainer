@@ -10,7 +10,6 @@ go 1.21
 
 require (
 	github.com/ftl/digimodes v0.0.0-20231231131023-cffadad68e9e
-	github.com/ftl/patrix v0.0.0-20231216163204-d2f8d83f211b
 	github.com/ftl/tci v0.3.2
 	github.com/jfreymuth/pulse v0.1.0
 	github.com/mjibson/go-dsp v0.0.0-20180508042940-11479a337f12
