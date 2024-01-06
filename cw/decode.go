@@ -29,8 +29,8 @@ const (
 	defaultWPM     = 20
 	maxSymbolCount = 8
 
-	minDitTime ticks = 2.5
-	maxDitTime ticks = 6.0
+	minDitTime ticks = 2.0
+	maxDitTime ticks = 7.0
 )
 
 type Tracer interface {
@@ -154,6 +154,15 @@ func (d *Decoder) SetTracer(tracer Tracer) {
 func (d *Decoder) Reset() {
 	d.wpm = defaultWPM
 	d.ditTime = d.wpmToDit(d.wpm)
+	d.Clear()
+}
+
+func (d *Decoder) Clear() {
+	d.decoding = false
+	d.currentChar.clear()
+	d.ticks = 0
+	d.onStart = 0
+	d.offStart = 0
 }
 
 func (d *Decoder) presetWPM(wpm int) {
