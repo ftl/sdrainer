@@ -82,13 +82,14 @@ func TestDecoder_SpeedTolerance(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, 10, minWpm, "min")
+	assert.Equal(t, 11, minWpm, "min")
 	assert.Equal(t, 28, maxWpm, "max")
 }
 
 func TestDecoder_SpeedAdaptionRate(t *testing.T) {
 	const sampleRate = 48000
 	const blockSize = 512
+	const maxRounds = 15
 	buffer := bytes.NewBuffer([]byte{})
 	decoder := NewDecoder(buffer, sampleRate, blockSize)
 	expected := "paris"
@@ -97,15 +98,11 @@ func TestDecoder_SpeedAdaptionRate(t *testing.T) {
 		wpm            int
 		expectedRounds int
 	}{
-		{29, 2},
-		{30, 2},
-		{35, 2},
-		{37, 2},
-		{38, 2},
-		{39, 2},
+		{28, 1},
+		{29, maxRounds},
 		{11, 1},
-		{10, 1},
-		{9, 10},
+		{10, maxRounds},
+		{9, maxRounds},
 	}
 	for _, tc := range tt {
 		t.Run(fmt.Sprintf("%d", tc.wpm), func(t *testing.T) {
@@ -113,7 +110,7 @@ func TestDecoder_SpeedAdaptionRate(t *testing.T) {
 			rounds := 0
 			actual := ""
 			decoder.Reset()
-			for actual != expected && rounds < 10 {
+			for actual != expected && rounds < maxRounds {
 				buffer.Reset()
 				decoder.Clear()
 
@@ -167,8 +164,8 @@ func TestDecoder_SpeedRange(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, 10, minWpm, "min")
-	assert.Equal(t, 56, maxWpm, "max")
+	assert.Equal(t, 11, minWpm, "min")
+	assert.Equal(t, 28, maxWpm, "max")
 }
 
 func TestDecoder_RecordedStreams(t *testing.T) {
