@@ -155,8 +155,7 @@ func (d *Decoder) SetTracer(tracer Tracer) {
 }
 
 func (d *Decoder) Reset() {
-	d.wpm = defaultWPM
-	d.ditTime = d.wpmToDit(d.wpm)
+	d.presetWPM(defaultWPM)
 	d.Clear()
 }
 
@@ -170,7 +169,15 @@ func (d *Decoder) Clear() {
 
 func (d *Decoder) presetWPM(wpm int) {
 	d.wpm = float64(wpm)
-	d.ditTime = d.wpmToDit(d.wpm)
+	d.setDitTime(d.wpmToDit(d.wpm))
+}
+
+func (d *Decoder) setDitTime(value ticks) {
+	d.ditTime = max(minDitTime, min(value, maxDitTime))
+}
+
+func ditToWPM(dit time.Duration) float64 {
+	return 60.0 / (50.0 * float64(dit.Seconds()))
 }
 
 func (d *Decoder) wpmToDit(wpm float64) ticks {
@@ -279,14 +286,6 @@ func (d *Decoder) onFallingEdge(onDuration ticks) {
 		// fmt.Print("-") // TODO REMOVE THIS
 		d.wpm = (d.wpm + d.ditToWPM(d.ditTime)) / 2.0
 	}
-}
-
-func (d *Decoder) setDitTime(value ticks) {
-	d.ditTime = max(minDitTime, min(value, maxDitTime))
-}
-
-func ditToWPM(dit time.Duration) float64 {
-	return 60.0 / (50.0 * float64(dit.Seconds()))
 }
 
 func (d *Decoder) appendSymbol(s cw.Symbol) {
