@@ -38,6 +38,18 @@ func (f ClockFunc) Now() time.Time {
 
 var WallClock = ClockFunc(time.Now)
 
+type manualClock struct {
+	now time.Time
+}
+
+func (c *manualClock) Now() time.Time {
+	return c.now
+}
+
+func (c *manualClock) Set(now time.Time) {
+	c.now = now
+}
+
 type ReceiverMode string
 
 const (
