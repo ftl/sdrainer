@@ -3,7 +3,6 @@ package rx
 import (
 	"log"
 	"math/rand"
-	"os"
 	"time"
 
 	"github.com/ftl/sdrainer/cw"
@@ -26,6 +25,18 @@ const (
 	defaultSilenceTimeout    = 20 * time.Second
 	defaultAttachmentTimeout = 2 * time.Minute
 )
+
+type Clock interface {
+	Now() time.Time
+}
+
+type ClockFunc func() time.Time
+
+func (f ClockFunc) Now() time.Time {
+	return f()
+}
+
+var WallClock = ClockFunc(time.Now)
 
 type ReceiverMode string
 
@@ -365,42 +376,4 @@ func (r *Receiver[T, F]) demodulatorTimeoutExceeded() bool {
 		log.Printf("timeout a: %v %t s: %v %t", r.attachmentTimeout, attachmentExceeded, r.silenceTimeout, silenceExceeded)
 	}
 	return attachmentExceeded || silenceExceeded
-}
-
-type Clock interface {
-	Now() time.Time
-}
-
-type ClockFunc func() time.Time
-
-func (f ClockFunc) Now() time.Time {
-	return f()
-}
-
-var WallClock = ClockFunc(time.Now)
-
-type TextProcessor struct {
-	clock Clock
-
-	lastWrite time.Time
-}
-
-func NewTextProcessor(clock Clock) *TextProcessor {
-	return &TextProcessor{
-		clock:     clock,
-		lastWrite: clock.Now(),
-	}
-}
-
-func (p *TextProcessor) Reset() {
-	p.lastWrite = p.clock.Now()
-}
-
-func (p *TextProcessor) LastWrite() time.Time {
-	return p.lastWrite
-}
-
-func (p *TextProcessor) Write(bytes []byte) (n int, err error) {
-	p.lastWrite = p.clock.Now()
-	return os.Stdout.Write(bytes)
 }
