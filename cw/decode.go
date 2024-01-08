@@ -27,6 +27,8 @@ const (
 	traceDecode = "decode"
 	traceSignal = "signal"
 
+	unknownCharacter rune = 0xA6
+
 	defaultWPM     = 20
 	maxSymbolCount = 8
 
@@ -312,7 +314,7 @@ func (d *Decoder) decodeCurrentChar() {
 	} else {
 		// TODO make this transparent to the user
 		// log.Printf("unknown char %s", d.currentChar.String())
-		err := d.writeToOutput('X')
+		err := d.writeToOutput(unknownCharacter)
 		if err != nil {
 			log.Printf("cannot write unknown marker to output: %v", err)
 		}

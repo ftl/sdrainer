@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/ftl/hamradio/callsign"
 )
 
 const (
@@ -36,8 +38,27 @@ func (p *TextProcessor) LastWrite() time.Time {
 	return p.lastWrite
 }
 
-func (p *TextProcessor) Write(bytes []byte) (n int, err error) {
+func (p *TextProcessor) Write(bytes []byte) (int, error) {
 	p.lastWrite = p.clock.Now()
+
+	bytesForWindow := bytes
+	for len(bytesForWindow) > 0 {
+		n, err := p.window.Write(bytesForWindow)
+		if err != nil {
+			panic(err)
+		}
+
+		candidates := callsign.FindAll(p.window.String())
+		for _, candidate := range candidates {
+			fmt.Printf("\nfound callsign %s\n", candidate.String())
+		}
+
+		if n <= len(bytesForWindow) {
+			bytesForWindow = bytesForWindow[n:]
+			p.window.Shift()
+		}
+	}
+
 	return os.Stdout.Write(bytes)
 }
 
