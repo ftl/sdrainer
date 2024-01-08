@@ -3,13 +3,17 @@ package rx
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strings"
 	"time"
-
-	"github.com/ftl/hamradio/callsign"
 )
 
 const (
 	defaultTextWindowSize = 20
+)
+
+var (
+	callsignExp = regexp.MustCompile(`\s(?:([a-z0-9]+)/)?(([a-z]|[a-z][a-z]|[0-9][a-z]|[0-9][a-z][a-z])[0-9][a-z0-9]*[a-z])(?:/([a-z0-9]+))?(?:/(p|a|m|mm|am))?\s`)
 )
 
 type TextProcessor struct {
@@ -48,9 +52,9 @@ func (p *TextProcessor) Write(bytes []byte) (int, error) {
 			panic(err)
 		}
 
-		candidates := callsign.FindAll(p.window.String())
-		for _, candidate := range candidates {
-			fmt.Printf("\nfound callsign %s\n", candidate.String())
+		candidate, found := p.window.FindNext(callsignExp, false)
+		if found {
+			fmt.Printf("\nfound callsign %s\n", strings.TrimSpace(candidate))
 		}
 
 		if n <= len(bytesForWindow) {
@@ -66,6 +70,7 @@ type textWindow struct {
 	window        [2][]byte
 	windowSize    int
 	currentWindow int
+	searchPoint   int
 }
 
 func newTextWindow(windowSize int) *textWindow {
@@ -112,4 +117,24 @@ func (w *textWindow) Shift() {
 		w.window[otherWindow] = append(w.window[otherWindow], w.window[w.currentWindow][startIndex:startIndex+appendLen]...)
 	}
 	w.currentWindow = otherWindow
+	w.searchPoint = max(0, w.searchPoint-startIndex)
+}
+
+func (w *textWindow) FindNext(exp *regexp.Regexp, includeTail bool) (string, bool) {
+	text := w.window[w.currentWindow]
+	if w.searchPoint >= len(text) {
+		return "", false
+	}
+
+	match := exp.FindIndex(text[w.searchPoint:])
+	if match == nil {
+		return "", false
+	}
+	if !includeTail && match[1] >= len(text) {
+		return "", false
+	}
+
+	w.searchPoint = match[1]
+
+	return string(text[match[0]:match[1]]), true
 }

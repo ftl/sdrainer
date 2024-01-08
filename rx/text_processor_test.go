@@ -1,6 +1,7 @@
 package rx
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -101,4 +102,48 @@ func TestTextWindow_Shift(t *testing.T) {
 	w.Reset()
 	assert.Equal(t, 0, w.currentWindow)
 	assert.Equal(t, "", w.String())
+}
+
+func TestTextWindow_FindNext(t *testing.T) {
+	w := newTextWindow(10)
+	aExp := regexp.MustCompile("a")
+
+	_, found := w.FindNext(aExp, true)
+	assert.False(t, found)
+	assert.Equal(t, 0, w.searchPoint)
+
+	w.Write([]byte("abc"))
+	_, found = w.FindNext(aExp, true)
+	assert.True(t, found)
+	assert.Equal(t, 1, w.searchPoint)
+
+	_, found = w.FindNext(aExp, true)
+	assert.False(t, found)
+	assert.Equal(t, 1, w.searchPoint)
+
+	w.Write([]byte("1234567"))
+	w.Shift()
+	assert.Equal(t, 0, w.searchPoint)
+	assert.Equal(t, "34567", w.String())
+
+	w.Write([]byte("abc"))
+	_, found = w.FindNext(aExp, true)
+	assert.True(t, found)
+	assert.Equal(t, 6, w.searchPoint)
+
+	w.Shift()
+	assert.Equal(t, 3, w.searchPoint)
+	assert.Equal(t, "67abc", w.String())
+}
+
+func TestTextWindow_FindNext_IncludeTail(t *testing.T) {
+	w := newTextWindow(10)
+	abcExp := regexp.MustCompile("abc")
+
+	w.Write([]byte("12345abc"))
+	_, found := w.FindNext(abcExp, false)
+	assert.False(t, found)
+
+	_, found = w.FindNext(abcExp, true)
+	assert.True(t, found)
 }
