@@ -1,14 +1,18 @@
 package cw
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ftl/digimodes/cw"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestToCWChar(t *testing.T) {
@@ -165,6 +169,58 @@ func TestDecoder_SpeedRange(t *testing.T) {
 
 	assert.Equal(t, 10, minWpm, "min")
 	assert.Equal(t, 56, maxWpm, "max")
+}
+
+func TestDecoder_RecordedStreams(t *testing.T) {
+	const sampleRate = 48000
+	const blockSize = 512
+	tt := []struct {
+		filename string
+		expected string
+	}{
+		{filename: "db100fk_1.txt", expected: "i100fk"},
+		{filename: "db100fk_2.txt", expected: "i100fk cq db1¦¦fk"},
+		{filename: "db100fk_3.txt", expected: "i100fk cq db1¦¦fk db100fk"},
+	}
+
+	buffer := bytes.NewBuffer([]byte{})
+	decoder := NewDecoder(buffer, sampleRate, blockSize)
+	decoder.traceEdges = true
+	for _, tc := range tt {
+		t.Run(tc.filename, func(t *testing.T) {
+			decoder.Reset()
+			buffer.Reset()
+
+			stream, err := readLines(tc.filename)
+			require.NoError(t, err)
+			for _, state := range stream {
+				decoder.Tick(state == "1")
+			}
+			decoder.stop()
+
+			assert.Equal(t, tc.expected, buffer.String())
+		})
+	}
+}
+
+func readLines(filename string) ([]string, error) {
+	file, err := os.Open(filepath.Join("testdata", filename))
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	result := make([]string, 0, 10000)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		result = append(result, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 var defaultTiming = timing{1, 3, 1, 3, 7}

@@ -120,10 +120,12 @@ type Decoder struct {
 
 	abortDecodeAfterDits int
 
-	currentChar cwChar
-	decodeTable map[cwChar]rune
+	currentChar        cwChar
+	currentCharInvalid bool
+	decodeTable        map[cwChar]rune
 
-	tracer Tracer
+	tracer     Tracer
+	traceEdges bool
 }
 
 func NewDecoder(out io.Writer, sampleRate int, blockSize int) *Decoder {
@@ -235,57 +237,69 @@ func (d *Decoder) Tick(state bool) {
 
 func (d *Decoder) onRisingEdge(offDuration ticks) {
 	offRatio := float64(offDuration) / float64(d.ditTime)
-	// fmt.Printf("\noff for %v (%.3f) => ", offDuration, offRatio)
+	d.traceEdgef("\noff for %v (%.3f %.3f) => ", offDuration, offRatio, d.ditTime)
 
 	lack := 1.0
-	if d.wpm > 30 {
+	if d.wpm > 25 {
 		lack = 0.75
 	}
-	if d.wpm > 35 {
+	if d.wpm > 30 {
 		lack = 0.60
 	}
-	lowerBound := 2 * lack
-	upperBound := 5 * lack
+	lowerBound := 1.5 * lack
+	upperBound := 4.5 * lack
 
 	if offRatio > lowerBound && offRatio < upperBound {
 		// we have a new char
 		d.decodeCurrentChar()
-		// fmt.Print("|") // TODO REMOVE THIS
+		d.traceEdgef("| (%.2f %.3f)", lack, lowerBound)
 	} else if offRatio >= upperBound {
 		// we have a word break
 		d.decodeCurrentChar()
 		d.writeToOutput(' ')
-		// fmt.Print("| |") // TODO REMOVE THIS
-		// } else {
-		// 	fmt.Printf("%v %v %v |%v %v|\n", d.ditTime, (d.ditTime * 2), lack, lowerBound, upperBound)
-		// }
+		d.traceEdgef("| | (%.2f %.3f)", lack, upperBound)
+	} else {
+		d.traceEdgef("X (%.2f %.3f)", lack, lowerBound)
 	}
 }
 
 func (d *Decoder) onFallingEdge(onDuration ticks) {
 	onRatio := float64(onDuration) / float64(d.ditTime)
-	// fmt.Printf("\non for %v (%.3f) => ", onDuration, onRatio)
+	d.traceEdgef("\non for %v (%.3f %.3f) => ", onDuration, onRatio, d.ditTime)
+
+	const (
+		ditLower = 0.6
+		ditDa    = 2.0
+		daUpper  = 3 * ditDa
+	)
 
 	switch {
 	case onDuration < minDitTime:
 		// ignore
-	case (onRatio < 2), d.ditTime == 0:
+	case (onRatio < ditDa), d.ditTime == 0:
 		d.setDitTime((onDuration + d.ditTime + d.ditTime) / 3)
-	case onRatio > 5:
-		d.setDitTime(d.ditTime * 1.5)
-	case onRatio > 7:
-		d.setDitTime(d.ditTime * 2)
+	case onRatio > 2*ditDa && onRatio < daUpper:
+		d.setDitTime(((onDuration / 3) + d.ditTime + d.ditTime + d.ditTime) / 4)
 	}
 
-	if onRatio < 2 && onRatio > 0.6 {
+	if onRatio > ditLower && onRatio < ditDa {
 		d.appendSymbol(cw.Dit)
-		// fmt.Print(".") // TODO REMOVE THIS
-	}
-	if onRatio >= 2 && onRatio < 6 {
+		d.traceEdgef("•")
+	} else if onRatio >= ditDa && onRatio < daUpper {
 		d.appendSymbol(cw.Da)
-		// fmt.Print("-") // TODO REMOVE THIS
+		d.traceEdgef("—")
 		d.wpm = (d.wpm + d.ditToWPM(d.ditTime)) / 2.0
+	} else {
+		d.currentCharInvalid = true
+		d.traceEdgef("Y")
 	}
+}
+
+func (d *Decoder) traceEdgef(format string, args ...any) {
+	if !d.traceEdges {
+		return
+	}
+	fmt.Printf(format, args...)
 }
 
 func (d *Decoder) appendSymbol(s cw.Symbol) {
@@ -299,6 +313,16 @@ func (d *Decoder) appendSymbol(s cw.Symbol) {
 func (d *Decoder) decodeCurrentChar() {
 	if d.currentChar.empty() {
 		// fmt.Print("X") // TODO REMOVE THIS
+		return
+	}
+	if d.currentCharInvalid {
+		// fmt.Print("X") // TODO REMOVE THIS
+		d.currentCharInvalid = false
+		d.currentChar.clear()
+		err := d.writeToOutput(unknownCharacter)
+		if err != nil {
+			log.Printf("cannot write unknown marker to output: %v", err)
+		}
 		return
 	}
 
