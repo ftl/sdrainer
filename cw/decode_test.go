@@ -82,8 +82,8 @@ func TestDecoder_SpeedTolerance(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, 11, minWpm, "min")
-	assert.Equal(t, 28, maxWpm, "max")
+	assert.Equal(t, 12, minWpm, "min")
+	assert.Equal(t, 37, maxWpm, "max")
 }
 
 func TestDecoder_SpeedAdaptionRate(t *testing.T) {
@@ -99,10 +99,13 @@ func TestDecoder_SpeedAdaptionRate(t *testing.T) {
 		expectedRounds int
 	}{
 		{28, 1},
-		{29, maxRounds},
-		{11, 1},
+		{29, 1},
+		{38, 2},
+		{56, 2},
+		{57, maxRounds},
+		{12, 1},
+		{11, maxRounds},
 		{10, maxRounds},
-		{9, maxRounds},
 	}
 	for _, tc := range tt {
 		t.Run(fmt.Sprintf("%d", tc.wpm), func(t *testing.T) {
@@ -164,8 +167,8 @@ func TestDecoder_SpeedRange(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, 11, minWpm, "min")
-	assert.Equal(t, 28, maxWpm, "max")
+	assert.Equal(t, 12, minWpm, "min")
+	assert.Equal(t, 56, maxWpm, "max")
 }
 
 func TestDecoder_RecordedStreams(t *testing.T) {
@@ -178,6 +181,11 @@ func TestDecoder_RecordedStreams(t *testing.T) {
 		{filename: "db100fk_1.txt", expected: "i100fk"},
 		{filename: "db100fk_2.txt", expected: "i100fk cq db1¦¦fk"},
 		{filename: "db100fk_3.txt", expected: "i100fk cq db1¦¦fk db100fk"},
+		{filename: "gb4wwa.txt", expected: "rq gb4wwa gb4wwa up"},
+		{filename: "ly2px_1.txt", expected: "q cq"},
+		{filename: "ly2px_2.txt", expected: "q cq cqde"},
+		{filename: "ly2px_3.txt", expected: "q cq cqde ly2px ly2px"},
+		{filename: "ly2px_4.txt", expected: "q cq cqde ly2px ly2px cq cq cqde ly2px ly2px ly2 gx ä"},
 	}
 
 	buffer := bytes.NewBuffer([]byte{})

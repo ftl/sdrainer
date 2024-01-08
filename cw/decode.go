@@ -240,14 +240,18 @@ func (d *Decoder) onRisingEdge(offDuration ticks) {
 	d.traceEdgef("\noff for %v (%.3f %.3f) => ", offDuration, offRatio, d.ditTime)
 
 	lack := 1.0
-	if d.wpm > 25 {
-		lack = 0.75
-	}
-	if d.wpm > 30 {
-		lack = 0.60
-	}
+	// if d.wpm > 25 {
+	// 	lack = 0.75
+	// }
+	// if d.wpm > 30 {
+	// 	lack = 0.60
+	// }
 	lowerBound := 1.5 * lack
-	upperBound := 4.5 * lack
+	upperBound := 4.25 * lack
+
+	if (offDuration >= minDitTime) && (offRatio < lowerBound) {
+		d.setDitTime((offDuration + d.ditTime + d.ditTime) / 3)
+	}
 
 	if offRatio > lowerBound && offRatio < upperBound {
 		// we have a new char
@@ -268,7 +272,7 @@ func (d *Decoder) onFallingEdge(onDuration ticks) {
 	d.traceEdgef("\non for %v (%.3f %.3f) => ", onDuration, onRatio, d.ditTime)
 
 	const (
-		ditLower = 0.6
+		ditLower = 0.4
 		ditDa    = 2.0
 		daUpper  = 3 * ditDa
 	)
