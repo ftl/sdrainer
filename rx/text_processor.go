@@ -2,6 +2,7 @@ package rx
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -10,24 +11,35 @@ import (
 
 const (
 	defaultTextWindowSize = 20
+	spottingThreshold     = 2
 )
 
 var (
 	callsignExp = regexp.MustCompile(`\s(?:([a-z0-9]+)/)?(([a-z]|[a-z][a-z]|[0-9][a-z]|[0-9][a-z][a-z])[0-9][a-z0-9]*[a-z])(?:/([a-z0-9]+))?(?:/(p|a|m|mm|am))?\s`)
 )
 
+type SpotIndicator interface {
+	ShowSpot(callsign string)
+}
+
 type TextProcessor struct {
-	clock     Clock
+	clock         Clock
+	spotIndicator SpotIndicator
+
 	lastWrite time.Time
 
 	window *textWindow
+
+	collectedCallsigns map[string]int
 }
 
-func NewTextProcessor(clock Clock) *TextProcessor {
+func NewTextProcessor(clock Clock, spotIndicator SpotIndicator) *TextProcessor {
 	result := &TextProcessor{
-		clock:     clock,
-		lastWrite: clock.Now(),
-		window:    newTextWindow(defaultTextWindowSize),
+		clock:              clock,
+		spotIndicator:      spotIndicator,
+		lastWrite:          clock.Now(),
+		window:             newTextWindow(defaultTextWindowSize),
+		collectedCallsigns: make(map[string]int),
 	}
 
 	return result
@@ -36,6 +48,7 @@ func NewTextProcessor(clock Clock) *TextProcessor {
 func (p *TextProcessor) Reset() {
 	p.lastWrite = p.clock.Now()
 	p.window.Reset()
+	clear(p.collectedCallsigns)
 }
 
 func (p *TextProcessor) LastWrite() time.Time {
@@ -54,7 +67,7 @@ func (p *TextProcessor) Write(bytes []byte) (int, error) {
 
 		candidate, found := p.window.FindNext(callsignExp, false)
 		if found {
-			fmt.Printf("\nfound callsign %s\n", strings.TrimSpace(candidate))
+			p.collectCallsign(candidate)
 		}
 
 		if n <= len(bytesForWindow) {
@@ -64,6 +77,35 @@ func (p *TextProcessor) Write(bytes []byte) (int, error) {
 	}
 
 	return os.Stdout.Write(bytes)
+}
+
+func (p *TextProcessor) collectCallsign(candidate string) {
+	candidate = strings.ToLower(strings.TrimSpace(candidate))
+	count := p.collectedCallsigns[candidate]
+	// TODO check the DXCC entity and MASTER.SCP if this is a valid match
+	count++
+	p.collectedCallsigns[candidate] = count
+
+	bestMatch := p.BestMatch()
+	if bestMatch != "" {
+		p.spotIndicator.ShowSpot(bestMatch)
+	} else {
+		log.Printf("\ncollected callsigns: %v\n", p.collectedCallsigns)
+	}
+}
+
+func (p *TextProcessor) BestMatch() string {
+	bestMatch := ""
+	maxCount := spottingThreshold - 1
+
+	for callsign, count := range p.collectedCallsigns {
+		if maxCount < count {
+			maxCount = count
+			bestMatch = callsign
+		}
+	}
+
+	return bestMatch
 }
 
 type textWindow struct {

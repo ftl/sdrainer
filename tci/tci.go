@@ -161,6 +161,7 @@ const (
 var (
 	peakColor   tci.ARGB = tci.NewARGB(255, 255, 0, 0)
 	decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
+	spotColor   tci.ARGB = tci.NewARGB(255, 255, 255, 0)
 )
 
 func (p *Process) ShowPeaks(_ string, peaks []dsp.Peak[float32, int]) {
@@ -199,6 +200,16 @@ func (p *Process) hideDecode() {
 	p.client.DeleteSpot(">")
 	p.client.DeleteSpot(decodeLabel)
 	p.client.DeleteSpot("<")
+}
+
+func (p *Process) ShowSpot(_ string, callsign string, frequency int) {
+	p.doAsync(func() {
+		p.showSpot(callsign, frequency)
+	})
+}
+
+func (p *Process) showSpot(callsign string, frequency int) {
+	p.client.AddSpot(callsign, tci.ModeCW, frequency, spotColor, "SDRainer")
 }
 
 type tciListener struct {

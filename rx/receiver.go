@@ -3,6 +3,7 @@ package rx
 import (
 	"log"
 	"math/rand"
+	"strings"
 	"time"
 
 	"github.com/ftl/sdrainer/cw"
@@ -61,6 +62,7 @@ type ReceiverIndicator[T, F dsp.Number] interface {
 	ShowPeaks(receiver string, peaks []dsp.Peak[T, F])
 	ShowDecode(receiver string, peak dsp.Peak[T, F])
 	HideDecode(receiver string)
+	ShowSpot(receiver string, callsign string, frequency F)
 }
 
 type Receiver[T, F dsp.Number] struct {
@@ -123,7 +125,7 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 	r.blockSize = blockSize
 	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
 
-	r.textProcessor = NewTextProcessor(r.clock)
+	r.textProcessor = NewTextProcessor(r.clock, r)
 	r.demodulator = cw.NewSpectralDemodulator[T, F](r.textProcessor, int(sampleRate), r.blockSize)
 	r.demodulator.SetSignalThreshold(r.peakThreshold)
 	r.demodulator.SetTracer(r.tracer)
@@ -243,6 +245,11 @@ func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
 	default:
 		log.Printf("IQ data skipped on receiver %s", r.id)
 	}
+}
+
+func (r *Receiver[T, F]) ShowSpot(callsign string) {
+	callsign = strings.ToUpper(callsign)
+	r.indicator.ShowSpot(r.id, callsign, r.demodulator.Peak().SignalFrequency)
 }
 
 func (r *Receiver[T, F]) run() {
