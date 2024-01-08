@@ -15,6 +15,10 @@ This is work in progress, the CW decoder is still very inaccurate and cannot han
 - add support for other SDR devices (HDSDR, SDRplay, RTL-SDR, IC-7610)
 - add support for other digital modes (PSK31, RTTY)
 
+## Sponsors
+
+I started this just to scratch the itch of learning how a CW skimmer might work. If you like what I'm doing here and want to support the further development, please consider becoming a [sponsor of this project](https://github.com/sponsors/ftl).
+
 ## License
 
 This software is published under the [MIT License](https://www.tldrlegal.com/l/mit).
