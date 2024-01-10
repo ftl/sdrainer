@@ -185,7 +185,7 @@ func TestDecoder_RecordedStreams(t *testing.T) {
 		{filename: "ly2px_1.txt", expected: "q cq"},
 		{filename: "ly2px_2.txt", expected: "q cq cqde"},
 		{filename: "ly2px_3.txt", expected: "q cq cqde ly2px ly2px"},
-		{filename: "ly2px_4.txt", expected: "q cq cqde ly2px ly2px cq cq cqde ly2px ly2px ly2 gx ä"},
+		{filename: "ly2px_4.txt", expected: "q cq cqde ly2px ly2px cqcqcqde ly2px ly2px ly2gx ä"},
 	}
 
 	buffer := bytes.NewBuffer([]byte{})

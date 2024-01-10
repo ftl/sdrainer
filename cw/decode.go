@@ -114,7 +114,6 @@ type Decoder struct {
 	lastState bool
 	onStart   ticks
 	offStart  ticks
-	ditTime   ticks
 	wpm       float64
 	decoding  bool
 
@@ -123,6 +122,8 @@ type Decoder struct {
 	currentChar        cwChar
 	currentCharInvalid bool
 	decodeTable        map[cwChar]rune
+	onThreshold        *AdaptiveThreshold
+	offThreshold       *AdaptiveThreshold
 
 	tracer     Tracer
 	traceEdges bool
@@ -136,8 +137,11 @@ func NewDecoder(out io.Writer, sampleRate int, blockSize int) *Decoder {
 		abortDecodeAfterDits: 10,
 		decodeTable:          generateDecodeTable(),
 	}
-	result.ditTime = result.wpmToDit(result.wpm)
 	result.currentChar.clear()
+
+	ditTime := result.wpmToDit(result.wpm)
+	result.onThreshold = NewAdaptiveThreshold(ditTime)
+	result.offThreshold = NewAdaptiveThreshold(ditTime)
 
 	return result
 }
@@ -159,6 +163,7 @@ func (d *Decoder) SetTracer(tracer Tracer) {
 func (d *Decoder) Reset() {
 	d.presetWPM(defaultWPM)
 	d.Clear()
+	d.onThreshold.Reset()
 }
 
 func (d *Decoder) Clear() {
@@ -171,11 +176,9 @@ func (d *Decoder) Clear() {
 
 func (d *Decoder) presetWPM(wpm int) {
 	d.wpm = float64(wpm)
-	d.setDitTime(d.wpmToDit(d.wpm))
-}
-
-func (d *Decoder) setDitTime(value ticks) {
-	d.ditTime = max(minDitTime, min(value, maxDitTime))
+	ditTime := d.wpmToDit(d.wpm)
+	d.onThreshold.Preset(ditTime)
+	d.offThreshold.Preset(ditTime)
 }
 
 func ditToWPM(dit time.Duration) float64 {
@@ -217,14 +220,14 @@ func (d *Decoder) Tick(state bool) {
 	} else {
 		currentDuration = now - d.offStart
 	}
-	upperBound := d.ditTime * ticks(d.abortDecodeAfterDits)
+	upperBound := d.offThreshold.Get() * ticks(d.abortDecodeAfterDits)
 
 	if d.tracer != nil {
 		stateInt := 0
 		if state {
 			stateInt = 1
 		}
-		d.tracer.Trace(traceDecode, "%f;%f;%d\n", d.ditTime, 3.0, stateInt)
+		d.tracer.Trace(traceDecode, "%f;%f;%d\n", currentDuration, d.onThreshold.Get(), stateInt)
 		d.tracer.Trace(traceSignal, "%d\n", stateInt)
 	}
 
@@ -236,66 +239,49 @@ func (d *Decoder) Tick(state bool) {
 }
 
 func (d *Decoder) onRisingEdge(offDuration ticks) {
-	offRatio := float64(offDuration) / float64(d.ditTime)
-	d.traceEdgef("\noff for %v (%.3f %.3f) => ", offDuration, offRatio, d.ditTime)
-
-	lack := 1.0
-	// if d.wpm > 25 {
-	// 	lack = 0.75
-	// }
-	// if d.wpm > 30 {
-	// 	lack = 0.60
-	// }
-	lowerBound := 1.5 * lack
-	upperBound := 4.25 * lack
-
-	if (offDuration >= minDitTime) && (offRatio < lowerBound) {
-		d.setDitTime((offDuration + d.ditTime + d.ditTime) / 3)
+	d.traceEdgef("\noff for %v (%.3f) => ", offDuration, d.offThreshold.Get())
+	if offDuration < minDitTime {
+		return
 	}
 
-	if offRatio > lowerBound && offRatio < upperBound {
-		// we have a new char
-		d.decodeCurrentChar()
-		d.traceEdgef("| (%.2f %.3f)", lack, lowerBound)
-	} else if offRatio >= upperBound {
+	d.offThreshold.Put(offDuration, true)
+
+	threshold := d.offThreshold.Get()
+	upperThreshold := d.offThreshold.Low() * 4.75
+	if offDuration >= upperThreshold {
 		// we have a word break
 		d.decodeCurrentChar()
 		d.writeToOutput(' ')
-		d.traceEdgef("| | (%.2f %.3f)", lack, upperBound)
+		d.traceEdgef("| |")
+	} else if offDuration >= threshold {
+		// we have a new char
+		d.decodeCurrentChar()
+		d.traceEdgef("|")
 	} else {
-		d.traceEdgef("X (%.2f %.3f)", lack, lowerBound)
+		d.traceEdgef("X")
 	}
 }
 
 func (d *Decoder) onFallingEdge(onDuration ticks) {
-	onRatio := float64(onDuration) / float64(d.ditTime)
-	d.traceEdgef("\non for %v (%.3f %.3f) => ", onDuration, onRatio, d.ditTime)
-
-	const (
-		ditLower = 0.4
-		ditDa    = 2.0
-		daUpper  = 3 * ditDa
-	)
-
-	switch {
-	case onDuration < minDitTime:
-		// ignore
-	case (onRatio < ditDa), d.ditTime == 0:
-		d.setDitTime((onDuration + d.ditTime + d.ditTime) / 3)
-	case onRatio > 2*ditDa && onRatio < daUpper:
-		d.setDitTime(((onDuration / 3) + d.ditTime + d.ditTime + d.ditTime) / 4)
+	d.traceEdgef("\non for %v (%.3f) => ", onDuration, d.onThreshold.Get())
+	if onDuration < minDitTime {
+		return
 	}
 
-	if onRatio > ditLower && onRatio < ditDa {
-		d.appendSymbol(cw.Dit)
-		d.traceEdgef("•")
-	} else if onRatio >= ditDa && onRatio < daUpper {
-		d.appendSymbol(cw.Da)
-		d.traceEdgef("—")
-		d.wpm = (d.wpm + d.ditToWPM(d.ditTime)) / 2.0
-	} else {
+	d.onThreshold.Put(onDuration, true)
+
+	threshold := d.onThreshold.Get()
+	upperThreshold := d.onThreshold.Low() * 4.75
+	if onDuration >= upperThreshold {
 		d.currentCharInvalid = true
 		d.traceEdgef("Y")
+	} else if onDuration >= threshold {
+		d.appendSymbol(cw.Da)
+		d.traceEdgef("—")
+		d.wpm = (d.wpm + d.ditToWPM(d.onThreshold.Low())) / 2.0
+	} else {
+		d.appendSymbol(cw.Dit)
+		d.traceEdgef("•")
 	}
 }
 
@@ -357,4 +343,77 @@ func (d *Decoder) writeToOutput(r rune) error {
 
 func (d *Decoder) stop() {
 	d.decodeCurrentChar()
+}
+
+type AdaptiveThreshold struct {
+	preset     ticks
+	upperBound ticks
+
+	low  ticks
+	high ticks
+
+	last      ticks
+	threshold ticks
+}
+
+func NewAdaptiveThreshold(preset ticks) *AdaptiveThreshold {
+	result := &AdaptiveThreshold{
+		preset:     preset,
+		upperBound: 5,
+	}
+	result.Reset()
+	return result
+}
+
+func (t *AdaptiveThreshold) Reset() {
+	t.low = t.preset
+	t.high = 3 * t.low // default 1:3 timing
+	t.last = t.low
+	t.updateThreshold()
+}
+
+func (t *AdaptiveThreshold) Preset(preset ticks) {
+	t.preset = preset
+	t.Reset()
+}
+
+func (t *AdaptiveThreshold) Put(duration ticks, state bool) {
+	const highFactor = 2
+	const avgWeight = 0.8
+	const currentWeight = 1.0 - avgWeight
+
+	if duration >= t.low*t.upperBound {
+		return
+	}
+
+	if t.last >= duration*highFactor { // last high, now low {
+		t.low = avgWeight*t.low + currentWeight*duration
+		t.high = avgWeight*t.high + currentWeight*t.last
+	} else if duration >= t.last*highFactor { // last low, now high
+		t.low = avgWeight*t.low + currentWeight*t.last
+		t.high = avgWeight*t.high + currentWeight*duration
+	}
+	t.last = duration
+	t.updateThreshold()
+}
+
+func (t *AdaptiveThreshold) updateThreshold() {
+	// geometric mean
+	t.threshold = ticks(math.Sqrt(float64(t.low) * float64(t.high)))
+}
+
+func (t *AdaptiveThreshold) Get() ticks {
+	return t.threshold
+}
+
+func (t *AdaptiveThreshold) Ratio() ticks {
+	return t.high / t.low
+}
+
+func (t *AdaptiveThreshold) Low() ticks {
+	return t.low
+}
+
+func (t *AdaptiveThreshold) High() ticks {
+	return t.high
 }
