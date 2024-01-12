@@ -16,7 +16,7 @@ const (
 	traceSpectrum = "spectrum"
 
 	iqBufferSize   = 100
-	cumulationSize = 50
+	cumulationSize = 100
 	dBmShift       = 120
 	peakPadding    = 0
 	noiseWindow    = 30
@@ -26,6 +26,7 @@ const (
 
 	defaultSilenceTimeout    = 20 * time.Second
 	defaultAttachmentTimeout = 2 * time.Minute
+	defaultWriteTimeout      = 5 * time.Second
 )
 
 type Clock interface {
@@ -265,6 +266,9 @@ func (r *Receiver[T, F]) run() {
 	peakTicker := time.NewTicker(5 * time.Second)
 	defer peakTicker.Stop()
 
+	writeTimeoutTicker := time.NewTicker(1 * time.Second)
+	defer writeTimeoutTicker.Stop()
+
 	for {
 		select {
 		case op := <-r.op:
@@ -273,6 +277,10 @@ func (r *Receiver[T, F]) run() {
 			// peaksToShow := make([]dsp.peak[T, int], len(peaks))
 			// copy(peaksToShow, peaks)
 			// r.indicator.ShowPeaks(r.id, peaksToShow)
+		case <-writeTimeoutTicker.C:
+			if r.clock.Now().Sub(r.textProcessor.LastWrite()) > defaultWriteTimeout {
+				r.textProcessor.WriteTimeout()
+			}
 		case frame := <-r.in:
 			if len(frame) == 0 {
 				continue

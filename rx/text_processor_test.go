@@ -154,6 +154,20 @@ func TestTextProcessor_CollectCallsign(t *testing.T) {
 	for _, c := range receivedText {
 		p.Write([]byte(string(c)))
 	}
+
 	t.Logf("collected callsigns %v", p.collectedCallsigns)
 	assert.Equal(t, 3, p.collectedCallsigns["dl1abc"])
+}
+
+func TestTextProcessor_WriteTimeout(t *testing.T) {
+	p := NewTextProcessor(nil, WallClock, SpotIndicatorFunc(func(string) {}))
+	receivedText := "cq de dl1abc"
+	for _, c := range receivedText {
+		p.Write([]byte(string(c)))
+	}
+
+	assert.Equal(t, 0, p.collectedCallsigns["dl1abc"])
+
+	p.WriteTimeout()
+	assert.Equal(t, 1, p.collectedCallsigns["dl1abc"])
 }

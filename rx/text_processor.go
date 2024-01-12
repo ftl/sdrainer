@@ -91,6 +91,13 @@ func (p *TextProcessor) Write(bytes []byte) (int, error) {
 	return len(bytes), nil
 }
 
+func (p *TextProcessor) WriteTimeout() {
+	candidate, found := p.window.FindNext(callsignExp, true)
+	if found {
+		p.collectCallsign(candidate)
+	}
+}
+
 func (p *TextProcessor) collectCallsign(candidate string) {
 	candidate = strings.ToLower(strings.TrimSpace(candidate))
 	count := p.collectedCallsigns[candidate]
