@@ -3,6 +3,7 @@ package rx
 import (
 	"log"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 
@@ -125,7 +126,7 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 	r.blockSize = blockSize
 	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
 
-	r.textProcessor = NewTextProcessor(r.clock, r)
+	r.textProcessor = NewTextProcessor(os.Stdout, r.clock, r)
 	r.demodulator = cw.NewSpectralDemodulator[T, F](r.textProcessor, int(sampleRate), r.blockSize)
 	r.demodulator.SetSignalThreshold(r.peakThreshold)
 	r.demodulator.SetTracer(r.tracer)

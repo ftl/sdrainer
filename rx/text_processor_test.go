@@ -149,7 +149,7 @@ func TestTextWindow_FindNext_IncludeTail(t *testing.T) {
 }
 
 func TestTextProcessor_CollectCallsign(t *testing.T) {
-	p := NewTextProcessor(WallClock, SpotIndicatorFunc(func(string) {}))
+	p := NewTextProcessor(nil, WallClock, SpotIndicatorFunc(func(string) {}))
 	receivedText := "cq cq cq de dl1abc dl1abc dl1abc pse k"
 	for _, c := range receivedText {
 		p.Write([]byte(string(c)))

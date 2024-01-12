@@ -2,7 +2,7 @@ package rx
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -28,6 +28,7 @@ func (f SpotIndicatorFunc) ShowSpot(callsign string) {
 }
 
 type TextProcessor struct {
+	out           io.Writer
 	clock         Clock
 	spotIndicator SpotIndicator
 
@@ -38,8 +39,9 @@ type TextProcessor struct {
 	collectedCallsigns map[string]int
 }
 
-func NewTextProcessor(clock Clock, spotIndicator SpotIndicator) *TextProcessor {
+func NewTextProcessor(out io.Writer, clock Clock, spotIndicator SpotIndicator) *TextProcessor {
 	result := &TextProcessor{
+		out:                out,
 		clock:              clock,
 		spotIndicator:      spotIndicator,
 		lastWrite:          clock.Now(),
@@ -83,7 +85,10 @@ func (p *TextProcessor) Write(bytes []byte) (int, error) {
 		}
 	}
 
-	return os.Stdout.Write(bytes)
+	if p.out != nil {
+		return p.out.Write(bytes)
+	}
+	return len(bytes), nil
 }
 
 func (p *TextProcessor) collectCallsign(candidate string) {
