@@ -179,13 +179,13 @@ func TestDecoder_RecordedStreams(t *testing.T) {
 		expected string
 	}{
 		{filename: "db100fk_1.txt", expected: "i100fk"},
-		{filename: "db100fk_2.txt", expected: "i100fk cq db1¦¦fk"},
-		{filename: "db100fk_3.txt", expected: "i100fk cq db1¦¦fk db100fk"},
-		{filename: "gb4wwa.txt", expected: "rq gb4wwa gb4wwa up"},
+		{filename: "db100fk_2.txt", expected: "i100fk cq db1drfk"},
+		{filename: "db100fk_3.txt", expected: "i100fk cq db1drfk db100fk"},
+		{filename: "gb4wwa.txt", expected: "rqgb4wwa gb4wwa up"},
 		{filename: "ly2px_1.txt", expected: "q cq"},
-		{filename: "ly2px_2.txt", expected: "q cq cqde"},
-		{filename: "ly2px_3.txt", expected: "q cq cqde ly2px ly2px"},
-		{filename: "ly2px_4.txt", expected: "q cq cqde ly2px ly2px cqcqcqde ly2px ly2px ly2gx ä"},
+		{filename: "ly2px_2.txt", expected: "q cqcqde"},
+		{filename: "ly2px_3.txt", expected: "q cqcqde ly2px ly2px"},
+		{filename: "ly2px_4.txt", expected: "q cqcqde ly2px ly2px cqcqcqde ly2px ly2px ly2gx ä"},
 	}
 
 	buffer := bytes.NewBuffer([]byte{})

@@ -24,8 +24,10 @@ See also:
 */
 
 const (
-	traceDecode = "decode"
-	traceSignal = "signal"
+	traceDecode       = "decode"
+	traceSignalTiming = "signal_timing"
+	traceGapTiming    = "gap_timing"
+	traceSignal       = "signal"
 
 	unknownCharacter rune = 0xA6
 
@@ -223,11 +225,18 @@ func (d *Decoder) Tick(state bool) {
 	upperBound := d.offThreshold.Get() * ticks(d.abortDecodeAfterDits)
 
 	if d.tracer != nil {
+		onDuration := currentDuration
+		offDuration := currentDuration
 		stateInt := 0
 		if state {
 			stateInt = 1
+			offDuration = 0
+		} else {
+			onDuration = 0
 		}
 		d.tracer.Trace(traceDecode, "%f;%f;%d\n", currentDuration, d.onThreshold.Get(), stateInt)
+		d.tracer.Trace(traceSignalTiming, "%f;%f;%f;%f;%f;%d\n", onDuration, d.onThreshold.Get(), d.onThreshold.Low(), d.onThreshold.High(), 2*d.onThreshold.High(), stateInt)
+		d.tracer.Trace(traceGapTiming, "%f;%f;%f;%f;%f;%d\n", offDuration, d.offThreshold.Get(), d.offThreshold.Low(), d.offThreshold.High(), 2*d.offThreshold.High()-d.offThreshold.Get(), stateInt)
 		d.tracer.Trace(traceSignal, "%d\n", stateInt)
 	}
 
@@ -247,7 +256,7 @@ func (d *Decoder) onRisingEdge(offDuration ticks) {
 	d.offThreshold.Put(offDuration, true)
 
 	threshold := d.offThreshold.Get()
-	upperThreshold := d.offThreshold.Low() * 4.75
+	upperThreshold := 2*d.offThreshold.High() - d.offThreshold.Get()
 	if offDuration >= upperThreshold {
 		// we have a word break
 		d.decodeCurrentChar()
@@ -271,7 +280,7 @@ func (d *Decoder) onFallingEdge(onDuration ticks) {
 	d.onThreshold.Put(onDuration, true)
 
 	threshold := d.onThreshold.Get()
-	upperThreshold := d.onThreshold.Low() * 4.75
+	upperThreshold := 2 * d.onThreshold.High()
 	if onDuration >= upperThreshold {
 		d.currentCharInvalid = true
 		d.traceEdgef("Y")
@@ -359,7 +368,7 @@ type AdaptiveThreshold struct {
 func NewAdaptiveThreshold(preset ticks) *AdaptiveThreshold {
 	result := &AdaptiveThreshold{
 		preset:     preset,
-		upperBound: 5,
+		upperBound: 10,
 	}
 	result.Reset()
 	return result
@@ -379,7 +388,7 @@ func (t *AdaptiveThreshold) Preset(preset ticks) {
 
 func (t *AdaptiveThreshold) Put(duration ticks, state bool) {
 	const highFactor = 2
-	const avgWeight = 0.8
+	const avgWeight = 0.75
 	const currentWeight = 1.0 - avgWeight
 
 	if duration >= t.low*t.upperBound {
