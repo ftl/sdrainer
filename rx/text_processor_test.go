@@ -147,3 +147,13 @@ func TestTextWindow_FindNext_IncludeTail(t *testing.T) {
 	_, found = w.FindNext(abcExp, true)
 	assert.True(t, found)
 }
+
+func TestTextProcessor_CollectCallsign(t *testing.T) {
+	p := NewTextProcessor(WallClock, SpotIndicatorFunc(func(string) {}))
+	receivedText := "cq cq cq de dl1abc dl1abc dl1abc pse k"
+	for _, c := range receivedText {
+		p.Write([]byte(string(c)))
+	}
+	t.Logf("collected callsigns %v", p.collectedCallsigns)
+	assert.Equal(t, 3, p.collectedCallsigns["dl1abc"])
+}

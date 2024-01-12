@@ -2,7 +2,6 @@ package rx
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -15,11 +14,17 @@ const (
 )
 
 var (
-	callsignExp = regexp.MustCompile(`\s(?:([a-z0-9]+)/)?(([a-z]|[a-z][a-z]|[0-9][a-z]|[0-9][a-z][a-z])[0-9][a-z0-9]*[a-z])(?:/([a-z0-9]+))?(?:/(p|a|m|mm|am))?\s`)
+	callsignExp = regexp.MustCompile(`\s(?:([a-z0-9]+)/)?(([a-z]|[a-z][a-z]|[0-9][a-z]|[0-9][a-z][a-z])[0-9][a-z0-9]*[a-z])(?:/([a-z0-9]+))?(?:/(p|a|m|mm|am))?`)
 )
 
 type SpotIndicator interface {
 	ShowSpot(callsign string)
+}
+
+type SpotIndicatorFunc func(callsign string)
+
+func (f SpotIndicatorFunc) ShowSpot(callsign string) {
+	f(callsign)
 }
 
 type TextProcessor struct {
@@ -72,6 +77,8 @@ func (p *TextProcessor) Write(bytes []byte) (int, error) {
 
 		if n <= len(bytesForWindow) {
 			bytesForWindow = bytesForWindow[n:]
+		}
+		if p.window.IsFull() {
 			p.window.Shift()
 		}
 	}
@@ -89,8 +96,6 @@ func (p *TextProcessor) collectCallsign(candidate string) {
 	bestMatch := p.BestMatch()
 	if bestMatch != "" {
 		p.spotIndicator.ShowSpot(bestMatch)
-	} else {
-		log.Printf("\ncollected callsigns: %v\n", p.collectedCallsigns)
 	}
 }
 
@@ -162,21 +167,25 @@ func (w *textWindow) Shift() {
 	w.searchPoint = max(0, w.searchPoint-startIndex)
 }
 
+func (w *textWindow) IsFull() bool {
+	return len(w.window[w.currentWindow]) == w.windowSize
+}
+
 func (w *textWindow) FindNext(exp *regexp.Regexp, includeTail bool) (string, bool) {
-	text := w.window[w.currentWindow]
-	if w.searchPoint >= len(text) {
+	if w.searchPoint >= len(w.window[w.currentWindow]) {
 		return "", false
 	}
 
-	match := exp.FindIndex(text[w.searchPoint:])
+	searchText := w.window[w.currentWindow][w.searchPoint:]
+	match := exp.FindIndex(searchText)
 	if match == nil {
 		return "", false
 	}
-	if !includeTail && match[1] >= len(text) {
+	if !includeTail && match[1] >= len(searchText) {
 		return "", false
 	}
 
-	w.searchPoint = match[1]
+	w.searchPoint = w.searchPoint + match[1]
 
-	return string(text[match[0]:match[1]]), true
+	return string(searchText[match[0]:match[1]]), true
 }
