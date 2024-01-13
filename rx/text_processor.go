@@ -11,6 +11,8 @@ import (
 const (
 	defaultTextWindowSize = 20
 	spottingThreshold     = 2
+
+	defaultWriteTimeout = 5 * time.Second
 )
 
 var (
@@ -60,6 +62,13 @@ func (p *TextProcessor) Reset() {
 
 func (p *TextProcessor) LastWrite() time.Time {
 	return p.lastWrite
+}
+
+func (p *TextProcessor) CheckWriteTimeout() {
+	now := p.clock.Now()
+	if now.Sub(p.lastWrite) > defaultWriteTimeout {
+		p.WriteTimeout()
+	}
 }
 
 func (p *TextProcessor) Write(bytes []byte) (int, error) {

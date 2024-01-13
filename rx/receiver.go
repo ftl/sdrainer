@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ftl/sdrainer/cw"
 	"github.com/ftl/sdrainer/dsp"
 	"github.com/ftl/sdrainer/trace"
 )
@@ -23,10 +22,6 @@ const (
 
 	defaultPeakThreshold = 15
 	defaultEdgeWidth     = 70
-
-	defaultSilenceTimeout    = 20 * time.Second
-	defaultAttachmentTimeout = 2 * time.Minute
-	defaultWriteTimeout      = 5 * time.Second
 )
 
 type Clock interface {
@@ -61,35 +56,32 @@ const (
 )
 
 type ReceiverIndicator[T, F dsp.Number] interface {
+	ListenerIndicator[T, F]
+
 	ShowPeaks(receiver string, peaks []dsp.Peak[T, F])
-	ShowDecode(receiver string, peak dsp.Peak[T, F])
-	HideDecode(receiver string)
-	ShowSpot(receiver string, callsign string, frequency F)
 }
 
 type Receiver[T, F dsp.Number] struct {
-	clock Clock
+	id        string
+	mode      ReceiverMode
+	clock     Clock
+	indicator ReceiverIndicator[T, F]
 
-	id                string
-	indicator         ReceiverIndicator[T, F]
-	mode              ReceiverMode
-	peakThreshold     T
-	edgeWidth         int
-	silenceTimeout    time.Duration
-	attachmentTimeout time.Duration
-	sampleRate        int
-	blockSize         int
-	centerFrequency   F
-	vfoOffset         F
+	peakThreshold   T
+	edgeWidth       int
+	sampleRate      int
+	blockSize       int
+	centerFrequency F
+	vfoOffset       F
 
 	in               chan []T
 	op               chan func()
 	fft              *dsp.FFT[T]
 	frequencyMapping *dsp.FrequencyMapping[F]
 
-	demodulator   *cw.SpectralDemodulator[T, F]
-	textProcessor *TextProcessor
-	lastAttach    time.Time
+	listener          *Listener[T, F]
+	silenceTimeout    time.Duration
+	attachmentTimeout time.Duration
 
 	tracer trace.Tracer
 }
@@ -127,10 +119,7 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 	r.blockSize = blockSize
 	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
 
-	r.textProcessor = NewTextProcessor(os.Stdout, r.clock, r)
-	r.demodulator = cw.NewSpectralDemodulator[T, F](r.textProcessor, int(sampleRate), r.blockSize)
-	r.demodulator.SetSignalThreshold(r.peakThreshold)
-	r.demodulator.SetTracer(r.tracer)
+	r.listener = NewListener[T, F](r.id, os.Stdout, r.clock, r.indicator, r.sampleRate, r.blockSize)
 
 	go r.run()
 }
@@ -159,14 +148,14 @@ func (r *Receiver[T, F]) do(f func()) {
 func (r *Receiver[T, F]) SetTracer(tracer trace.Tracer) {
 	r.do(func() {
 		r.tracer = tracer
-		r.demodulator.SetTracer(tracer)
+		r.listener.SetTracer(tracer)
 	})
 }
 
 func (r *Receiver[T, F]) SetPeakThreshold(threshold T) {
 	r.do(func() {
 		r.peakThreshold = threshold
-		r.demodulator.SetSignalThreshold(threshold)
+		r.listener.SetSignalThreshold(threshold)
 	})
 }
 
@@ -190,7 +179,7 @@ func (r *Receiver[T, F]) SetAttachmentTimeout(timeout time.Duration) {
 
 func (r *Receiver[T, F]) SetSignalDebounce(debounce int) {
 	r.do(func() {
-		r.demodulator.SetSignalDebounce(debounce)
+		r.listener.SetSignalDebounce(debounce)
 	})
 }
 
@@ -221,7 +210,7 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 			freq := r.vfoOffset + r.centerFrequency
 			peak := r.newPeakCenteredOnFrequency(freq)
 			peak.SignalValue = 80
-			r.attachDemodulator(&peak)
+			r.listener.Attach(&peak)
 
 			r.tracer.Start()
 		}
@@ -251,7 +240,7 @@ func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
 
 func (r *Receiver[T, F]) ShowSpot(callsign string) {
 	callsign = strings.ToUpper(callsign)
-	r.indicator.ShowSpot(r.id, callsign, r.demodulator.Peak().SignalFrequency)
+	r.indicator.ShowSpot(r.id, callsign, r.listener.Peak().SignalFrequency)
 }
 
 func (r *Receiver[T, F]) run() {
@@ -278,9 +267,7 @@ func (r *Receiver[T, F]) run() {
 			// copy(peaksToShow, peaks)
 			// r.indicator.ShowPeaks(r.id, peaksToShow)
 		case <-writeTimeoutTicker.C:
-			if r.clock.Now().Sub(r.textProcessor.LastWrite()) > defaultWriteTimeout {
-				r.textProcessor.WriteTimeout()
-			}
+			r.listener.CheckWriteTimeout()
 		case frame := <-r.in:
 			if len(frame) == 0 {
 				continue
@@ -302,13 +289,13 @@ func (r *Receiver[T, F]) run() {
 			noiseFloor := noiseFloorMean.Put(dsp.PSDValueIndB(psdNoiseFloor, r.blockSize) + dBmShift)
 			threshold := r.peakThreshold + noiseFloor
 
-			if r.demodulator.Attached() {
-				maxValue, _ := spectrum.Max(r.demodulator.PeakRange())
+			if r.listener.Attached() {
+				maxValue, _ := spectrum.Max(r.listener.PeakRange())
 
-				r.demodulator.Tick(maxValue, noiseFloor)
+				r.listener.Listen(maxValue, noiseFloor)
 
-				if r.mode == RandomPeakMode && r.demodulatorTimeoutExceeded() {
-					r.demodulator.Detach()
+				if r.mode == RandomPeakMode && r.listener.TimeoutExceeded() {
+					r.listener.Detach()
 					r.indicator.HideDecode(r.id)
 					r.tracer.Stop()
 				}
@@ -320,7 +307,7 @@ func (r *Receiver[T, F]) run() {
 			cumulationCount++
 
 			if cumulationCount == cumulationSize {
-				if r.mode == RandomPeakMode && !r.demodulator.Attached() {
+				if r.mode == RandomPeakMode && !r.listener.Attached() {
 					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
 
 					if len(peaks) > 0 {
@@ -329,7 +316,7 @@ func (r *Receiver[T, F]) run() {
 						centeredPeak := r.newPeakCenteredOnSignal(peak)
 						log.Printf("selected peak %#v -> %#v", peak, centeredPeak)
 
-						r.attachDemodulator(&centeredPeak)
+						r.listener.Attach(&centeredPeak)
 						r.tracer.Start()
 					}
 				}
@@ -338,8 +325,8 @@ func (r *Receiver[T, F]) run() {
 					r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
 					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
 
-					if r.demodulator.Attached() {
-						peak := r.demodulator.Peak()
+					if r.listener.Attached() {
+						peak := r.listener.Peak()
 						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", peak.SignalBin)
 					} else {
 						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", -1)
@@ -387,21 +374,4 @@ func (r *Receiver[T, F]) newPeakCenteredOnBin(centerBin int) dsp.Peak[T, F] {
 	peak.SignalFrequency = peak.CenterFrequency()
 
 	return peak
-}
-
-func (r *Receiver[T, F]) attachDemodulator(peak *dsp.Peak[T, F]) {
-	r.demodulator.Attach(peak)
-	r.lastAttach = r.clock.Now()
-	r.textProcessor.Reset()
-	r.indicator.ShowDecode(r.id, *peak)
-}
-
-func (r *Receiver[T, F]) demodulatorTimeoutExceeded() bool {
-	now := r.clock.Now()
-	attachmentExceeded := now.Sub(r.lastAttach) > r.attachmentTimeout
-	silenceExceeded := now.Sub(r.textProcessor.LastWrite()) > r.silenceTimeout
-	if attachmentExceeded || silenceExceeded {
-		log.Printf("timeout a: %v %t s: %v %t", r.attachmentTimeout, attachmentExceeded, r.silenceTimeout, silenceExceeded)
-	}
-	return attachmentExceeded || silenceExceeded
 }
