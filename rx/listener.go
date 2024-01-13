@@ -29,7 +29,9 @@ type Listener[T, F dsp.Number] struct {
 
 	demodulator   *cw.SpectralDemodulator[T, F]
 	textProcessor *TextProcessor
-	lastAttach    time.Time
+
+	peak       *dsp.Peak[T, F]
+	lastAttach time.Time
 
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
@@ -73,31 +75,43 @@ func (l *Listener[T, F]) SetSignalDebounce(debounce int) {
 
 func (l *Listener[T, F]) ShowSpot(callsign string) {
 	callsign = strings.ToUpper(callsign)
-	l.indicator.ShowSpot(l.id, callsign, l.demodulator.Peak().SignalFrequency)
+	l.indicator.ShowSpot(l.id, callsign, l.peak.SignalFrequency)
 }
 
 func (l *Listener[T, F]) Attach(peak *dsp.Peak[T, F]) {
-	l.demodulator.Attach(peak)
+	l.peak = peak
 	l.lastAttach = l.clock.Now()
+
+	l.demodulator.Reset()
 	l.textProcessor.Reset()
+
 	l.indicator.ShowDecode(l.id, *peak)
+	log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
 }
 
 func (l *Listener[T, F]) Attached() bool {
-	return l.demodulator.Attached()
+	return l.peak != nil
 }
 
 func (l *Listener[T, F]) Detach() {
-	l.demodulator.Detach()
+	l.peak = nil
+
 	l.indicator.HideDecode(l.id)
+	log.Printf("\ndemodulation stopped\n")
 }
 
 func (l *Listener[T, F]) PeakRange() (int, int) {
-	return l.demodulator.PeakRange()
+	if !l.Attached() {
+		return 0, 0
+	}
+	return l.peak.From, l.peak.To
 }
 
-func (l *Listener[T, F]) Peak() *dsp.Peak[T, F] {
-	return l.demodulator.Peak()
+func (l *Listener[T, F]) SignalBin() int {
+	if !l.Attached() {
+		return 0
+	}
+	return l.peak.SignalBin
 }
 
 func (l *Listener[T, F]) TimeoutExceeded() bool {
@@ -115,5 +129,9 @@ func (l *Listener[T, F]) CheckWriteTimeout() {
 }
 
 func (l *Listener[T, F]) Listen(value T, noiseFloor T) {
+	if !l.Attached() {
+		return
+	}
+
 	l.demodulator.Tick(value, noiseFloor)
 }

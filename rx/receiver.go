@@ -4,7 +4,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/ftl/sdrainer/dsp"
@@ -238,11 +237,6 @@ func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
 	}
 }
 
-func (r *Receiver[T, F]) ShowSpot(callsign string) {
-	callsign = strings.ToUpper(callsign)
-	r.indicator.ShowSpot(r.id, callsign, r.listener.Peak().SignalFrequency)
-}
-
 func (r *Receiver[T, F]) run() {
 	var spectrum dsp.Block[T]
 	var psd dsp.Block[T]
@@ -326,8 +320,7 @@ func (r *Receiver[T, F]) run() {
 					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
 
 					if r.listener.Attached() {
-						peak := r.listener.Peak()
-						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", peak.SignalBin)
+						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", r.listener.SignalBin())
 					} else {
 						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", -1)
 					}

@@ -2,7 +2,6 @@ package cw
 
 import (
 	"io"
-	"log"
 
 	"github.com/ftl/sdrainer/dsp"
 	"github.com/ftl/sdrainer/trace"
@@ -23,8 +22,6 @@ type SpectralDemodulator[M, F dsp.Number] struct {
 	signalDebouncer *dsp.BoolDebouncer
 	decoder         *Decoder
 	tracer          trace.Tracer
-
-	peak *dsp.Peak[M, F]
 }
 
 func NewSpectralDemodulator[M, F dsp.Number](out io.Writer, sampleRate int, blockSize int) *SpectralDemodulator[M, F] {
@@ -51,38 +48,11 @@ func (d *SpectralDemodulator[M, F]) SetTracer(tracer trace.Tracer) {
 	d.decoder.SetTracer(tracer)
 }
 
-func (d *SpectralDemodulator[M, F]) Attach(peak *dsp.Peak[M, F]) {
-	d.peak = peak
+func (d *SpectralDemodulator[M, F]) Reset() {
 	d.decoder.Reset()
-	log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
-}
-
-func (d *SpectralDemodulator[M, F]) Attached() bool {
-	return d.peak != nil
-}
-
-func (d *SpectralDemodulator[M, F]) Detach() {
-	d.peak = nil
-	d.decoder.Reset()
-	log.Printf("\ndemodulation stopped\n")
-}
-
-func (d *SpectralDemodulator[M, F]) PeakRange() (int, int) {
-	if !d.Attached() {
-		return 0, 0
-	}
-	return d.peak.From, d.peak.To
-}
-
-func (d *SpectralDemodulator[M, F]) Peak() *dsp.Peak[M, F] {
-	return d.peak
 }
 
 func (d *SpectralDemodulator[M, F]) Tick(value M, noiseFloor M) {
-	if !d.Attached() {
-		return
-	}
-
 	threshold := d.signalThreshold + noiseFloor
 	state := value > threshold
 	debounced := d.signalDebouncer.Debounce(state)
