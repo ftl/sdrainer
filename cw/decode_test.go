@@ -104,8 +104,11 @@ func TestDecoder_SpeedAdaptionRate(t *testing.T) {
 		{56, 2},
 		{57, maxRounds},
 		{12, 1},
-		{11, maxRounds},
-		{10, maxRounds},
+		{11, 2},
+		{10, 2},
+		{7, 2},
+		{6, 2},
+		{5, maxRounds},
 	}
 	for _, tc := range tt {
 		t.Run(fmt.Sprintf("%d", tc.wpm), func(t *testing.T) {
@@ -167,7 +170,7 @@ func TestDecoder_SpeedRange(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, 12, minWpm, "min")
+	assert.Equal(t, 6, minWpm, "min")
 	assert.Equal(t, 56, maxWpm, "max")
 }
 
@@ -190,7 +193,7 @@ func TestDecoder_RecordedStreams(t *testing.T) {
 
 	buffer := bytes.NewBuffer([]byte{})
 	decoder := NewDecoder(buffer, sampleRate, blockSize)
-	decoder.traceEdges = true
+	decoder.traceEdges = false
 	for _, tc := range tt {
 		t.Run(tc.filename, func(t *testing.T) {
 			decoder.Reset()
