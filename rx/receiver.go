@@ -47,6 +47,10 @@ func (c *manualClock) Set(now time.Time) {
 	c.now = now
 }
 
+func (c *manualClock) Add(d time.Duration) {
+	c.now = c.now.Add(d)
+}
+
 type ReceiverMode string
 
 const (
