@@ -100,6 +100,10 @@ func (l *Listener[T, F]) Detach() {
 	log.Printf("\ndemodulation stopped\n")
 }
 
+func (l *Listener[T, F]) Peak() *dsp.Peak[T, F] {
+	return l.peak
+}
+
 func (l *Listener[T, F]) PeakRange() (int, int) {
 	if !l.Attached() {
 		return 0, 0
@@ -120,6 +124,8 @@ func (l *Listener[T, F]) TimeoutExceeded() bool {
 	silenceExceeded := now.Sub(l.textProcessor.LastWrite()) > l.silenceTimeout
 	if attachmentExceeded || silenceExceeded {
 		log.Printf("timeout a: %v %t s: %v %t", l.attachmentTimeout, attachmentExceeded, l.silenceTimeout, silenceExceeded)
+		// } else {
+		// 	log.Printf("waiting for timeout a: %v %v s: %v %v", now.Sub(l.lastAttach), l.attachmentTimeout, now.Sub(l.textProcessor.LastWrite()), l.silenceTimeout)
 	}
 	return attachmentExceeded || silenceExceeded
 }

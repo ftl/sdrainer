@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	defaultPeakTimeout = 5 * time.Minute
+	defaultPeakTimeout = 2 * time.Minute
 )
 
 type peak[T, F dsp.Number] struct {
@@ -41,6 +41,33 @@ func NewPeaksTable[T, F dsp.Number](size int, clock Clock) *PeaksTable[T, F] {
 	}
 
 	return result
+}
+
+func (t *PeaksTable[T, F]) ForcePut(p *dsp.Peak[T, F]) {
+	clearFrom := -1
+	clearTo := -1
+
+	for i := max(0, p.From); i <= min(p.To, len(t.bins)-1); i++ {
+		existingPeak := t.bins[i]
+		if existingPeak == nil {
+			continue
+		}
+		if clearFrom == -1 {
+			clearFrom = existingPeak.From
+		}
+		clearTo = existingPeak.To
+	}
+
+	if clearFrom > -1 && clearTo > -1 {
+		t.clear(clearFrom, clearTo)
+	}
+
+	internalPeak := &peak[T, F]{
+		Peak:  p,
+		state: peakNew,
+		since: t.clock.Now(),
+	}
+	t.put(internalPeak)
 }
 
 func (t *PeaksTable[T, F]) Put(p *dsp.Peak[T, F]) {

@@ -2,7 +2,6 @@ package rx
 
 import (
 	"log"
-	"math/rand"
 	"os"
 	"time"
 
@@ -81,6 +80,7 @@ type Receiver[T, F dsp.Number] struct {
 	op               chan func()
 	fft              *dsp.FFT[T]
 	frequencyMapping *dsp.FrequencyMapping[F]
+	peaks            *PeaksTable[T, F]
 
 	listener          *Listener[T, F]
 	silenceTimeout    time.Duration
@@ -121,8 +121,13 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 	r.sampleRate = sampleRate
 	r.blockSize = blockSize
 	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
+	r.peaks = NewPeaksTable[T, F](r.blockSize, r.clock)
 
 	r.listener = NewListener[T, F](r.id, os.Stdout, r.clock, r.indicator, r.sampleRate, r.blockSize)
+	r.listener.SetAttachmentTimeout(r.attachmentTimeout)
+	r.listener.SetSilenceTimeout(r.silenceTimeout)
+	r.listener.SetSignalThreshold(r.peakThreshold)
+	r.listener.SetTracer(r.tracer)
 
 	go r.run()
 }
@@ -171,12 +176,18 @@ func (r *Receiver[T, F]) SetEdgeWidth(edgeWidth int) {
 func (r *Receiver[T, F]) SetSilenceTimeout(timeout time.Duration) {
 	r.do(func() {
 		r.silenceTimeout = timeout
+		if r.listener != nil {
+			r.listener.SetSilenceTimeout(timeout)
+		}
 	})
 }
 
 func (r *Receiver[T, F]) SetAttachmentTimeout(timeout time.Duration) {
 	r.do(func() {
 		r.attachmentTimeout = timeout
+		if r.listener != nil {
+			r.listener.SetAttachmentTimeout(timeout)
+		}
 	})
 }
 
@@ -210,9 +221,16 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 			return
 		}
 		if r.mode == VFOMode {
+			if r.listener.Attached() {
+				r.peaks.Deactivate(r.listener.Peak()) // beware of temporal coupling!
+				r.listener.Detach()
+			}
+
 			freq := r.vfoOffset + r.centerFrequency
 			peak := r.newPeakCenteredOnFrequency(freq)
 			peak.SignalValue = 80
+			r.peaks.ForcePut(&peak)
+			r.peaks.Activate(&peak)
 			r.listener.Attach(&peak)
 
 			r.tracer.Start()
@@ -253,8 +271,8 @@ func (r *Receiver[T, F]) run() {
 	peakTicker := time.NewTicker(5 * time.Second)
 	defer peakTicker.Stop()
 
-	writeTimeoutTicker := time.NewTicker(1 * time.Second)
-	defer writeTimeoutTicker.Stop()
+	cleanupTicker := time.NewTicker(1 * time.Second)
+	defer cleanupTicker.Stop()
 
 	for {
 		select {
@@ -264,8 +282,9 @@ func (r *Receiver[T, F]) run() {
 			// peaksToShow := make([]dsp.peak[T, int], len(peaks))
 			// copy(peaksToShow, peaks)
 			// r.indicator.ShowPeaks(r.id, peaksToShow)
-		case <-writeTimeoutTicker.C:
+		case <-cleanupTicker.C:
 			r.listener.CheckWriteTimeout()
+			r.peaks.Cleanup()
 		case frame := <-r.in:
 			if len(frame) == 0 {
 				continue
@@ -293,6 +312,7 @@ func (r *Receiver[T, F]) run() {
 				r.listener.Listen(maxValue, noiseFloor)
 
 				if r.mode == RandomPeakMode && r.listener.TimeoutExceeded() {
+					r.peaks.Deactivate(r.listener.Peak()) // beware of temporal coupling!
 					r.listener.Detach()
 					r.indicator.HideDecode(r.id)
 					r.tracer.Stop()
@@ -308,13 +328,17 @@ func (r *Receiver[T, F]) run() {
 				if r.mode == RandomPeakMode && !r.listener.Attached() {
 					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
 
-					if len(peaks) > 0 {
-						peakIndex := rand.Intn(len(peaks))
-						peak := peaks[peakIndex]
-						centeredPeak := r.newPeakCenteredOnSignal(peak)
-						log.Printf("selected peak %#v -> %#v", peak, centeredPeak)
+					for _, p := range peaks {
+						centeredPeak := r.newPeakCenteredOnSignal(p)
+						r.peaks.Put(&centeredPeak)
+					}
 
-						r.listener.Attach(&centeredPeak)
+					selectedPeak := r.peaks.FindNext()
+					if selectedPeak != nil {
+						log.Printf("selected peak %#v", selectedPeak)
+
+						r.peaks.Activate(selectedPeak)
+						r.listener.Attach(selectedPeak)
 						r.tracer.Start()
 					}
 				}
