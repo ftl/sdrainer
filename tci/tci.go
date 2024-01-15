@@ -177,29 +177,29 @@ func (p *Process) showPeaks(peaks []dsp.Peak[float32, int]) {
 	}
 }
 
-func (p *Process) ShowDecode(_ string, peak dsp.Peak[float32, int]) {
+func (p *Process) ShowDecode(id string, peak dsp.Peak[float32, int]) {
 	p.doAsync(func() {
-		p.showDecode(peak)
+		p.showDecode(id, peak)
 	})
 }
 
-func (p *Process) showDecode(peak dsp.Peak[float32, int]) {
-	p.client.DeleteSpot(decodeLabel)
-	p.client.AddSpot(">", tci.ModeCW, peak.FromFrequency, decodeColor, "SDRainer")
-	p.client.AddSpot(decodeLabel, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
-	p.client.AddSpot("<", tci.ModeCW, peak.ToFrequency, decodeColor, "SDRainer")
+func (p *Process) showDecode(id string, peak dsp.Peak[float32, int]) {
+	p.client.DeleteSpot(id)
+	// p.client.AddSpot(">", tci.ModeCW, peak.FromFrequency, decodeColor, "SDRainer")
+	p.client.AddSpot(id, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
+	// p.client.AddSpot("<", tci.ModeCW, peak.ToFrequency, decodeColor, "SDRainer")
 	offset := peak.SignalFrequency - p.receiver.CenterFrequency()
 	p.client.SetIF(p.trx, tci.VFOA, offset)
 }
 
-func (p *Process) HideDecode(_ string) {
-	p.doAsync(p.hideDecode)
+func (p *Process) HideDecode(id string) {
+	p.doAsync(func() { p.hideDecode(id) })
 }
 
-func (p *Process) hideDecode() {
-	p.client.DeleteSpot(">")
-	p.client.DeleteSpot(decodeLabel)
-	p.client.DeleteSpot("<")
+func (p *Process) hideDecode(id string) {
+	// p.client.DeleteSpot(">")
+	p.client.DeleteSpot(id)
+	// p.client.DeleteSpot("<")
 }
 
 func (p *Process) ShowSpot(_ string, callsign string, frequency int) {

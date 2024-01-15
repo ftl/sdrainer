@@ -18,8 +18,9 @@ const (
 	peakPadding    = 0
 	noiseWindow    = 30
 
-	defaultPeakThreshold = 15
-	defaultEdgeWidth     = 70
+	defaultPeakThreshold    = 15
+	defaultEdgeWidth        = 70
+	defaultListenerPoolSize = 30
 )
 
 type Clock interface {
@@ -82,7 +83,7 @@ type Receiver[T, F dsp.Number] struct {
 	frequencyMapping *dsp.FrequencyMapping[F]
 	peaks            *PeaksTable[T, F]
 
-	listener          *Listener[T, F]
+	listeners         *ListenerPool[T, F]
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
 
@@ -93,7 +94,7 @@ func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock, ind
 	if clock == nil {
 		clock = WallClock
 	}
-	return &Receiver[T, F]{
+	result := &Receiver[T, F]{
 		clock:     clock,
 		id:        id,
 		indicator: indicator,
@@ -108,6 +109,18 @@ func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock, ind
 
 		tracer: new(trace.NoTracer),
 	}
+	result.listeners = NewListenerPool[T, F](defaultListenerPoolSize, result.id, result.newListener)
+	return result
+}
+
+func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
+	// TODO handle the output properly instead of hardcoding os.Stdout
+	result := NewListener[T, F](id, os.Stdout, r.clock, r.indicator, r.sampleRate, r.blockSize)
+	result.SetAttachmentTimeout(r.attachmentTimeout)
+	result.SetSilenceTimeout(r.silenceTimeout)
+	result.SetSignalThreshold(r.peakThreshold)
+	result.SetTracer(r.tracer)
+	return result
 }
 
 func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
@@ -123,25 +136,15 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
 	r.peaks = NewPeaksTable[T, F](r.blockSize, r.clock)
 
-	r.listener = r.newListener(r.id)
-
 	go r.run()
-}
-
-func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
-	// TODO handle the output properly instead of hardcoding os.Stdout
-	result := NewListener[T, F](id, os.Stdout, r.clock, r.indicator, r.sampleRate, r.blockSize)
-	result.SetAttachmentTimeout(r.attachmentTimeout)
-	result.SetSilenceTimeout(r.silenceTimeout)
-	result.SetSignalThreshold(r.peakThreshold)
-	result.SetTracer(r.tracer)
-	return result
 }
 
 func (r *Receiver[T, F]) Stop() {
 	if r.in == nil {
 		return
 	}
+
+	r.listeners.Reset()
 
 	r.tracer.Stop()
 
@@ -162,14 +165,18 @@ func (r *Receiver[T, F]) do(f func()) {
 func (r *Receiver[T, F]) SetTracer(tracer trace.Tracer) {
 	r.do(func() {
 		r.tracer = tracer
-		r.listener.SetTracer(tracer)
+		r.listeners.ForEach(func(l *Listener[T, F]) {
+			l.SetTracer(tracer)
+		})
 	})
 }
 
 func (r *Receiver[T, F]) SetPeakThreshold(threshold T) {
 	r.do(func() {
 		r.peakThreshold = threshold
-		r.listener.SetSignalThreshold(threshold)
+		r.listeners.ForEach(func(l *Listener[T, F]) {
+			l.SetSignalThreshold(threshold)
+		})
 	})
 }
 
@@ -182,24 +189,26 @@ func (r *Receiver[T, F]) SetEdgeWidth(edgeWidth int) {
 func (r *Receiver[T, F]) SetSilenceTimeout(timeout time.Duration) {
 	r.do(func() {
 		r.silenceTimeout = timeout
-		if r.listener != nil {
-			r.listener.SetSilenceTimeout(timeout)
-		}
+		r.listeners.ForEach(func(l *Listener[T, F]) {
+			l.SetSilenceTimeout(timeout)
+		})
 	})
 }
 
 func (r *Receiver[T, F]) SetAttachmentTimeout(timeout time.Duration) {
 	r.do(func() {
 		r.attachmentTimeout = timeout
-		if r.listener != nil {
-			r.listener.SetAttachmentTimeout(timeout)
-		}
+		r.listeners.ForEach(func(l *Listener[T, F]) {
+			l.SetAttachmentTimeout(timeout)
+		})
 	})
 }
 
 func (r *Receiver[T, F]) SetSignalDebounce(debounce int) {
 	r.do(func() {
-		r.listener.SetSignalDebounce(debounce)
+		r.listeners.ForEach(func(l *Listener[T, F]) {
+			l.SetSignalDebounce(debounce)
+		})
 	})
 }
 
@@ -226,21 +235,22 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 		if r.blockSize == 0 {
 			return
 		}
-		if r.mode == VFOMode {
-			if r.listener.Attached() {
-				r.peaks.Deactivate(r.listener.Peak()) // beware of temporal coupling!
-				r.listener.Detach()
-			}
+		// if r.mode == VFOMode {
+		// TODO implement the VFO mode using the ListenerPool
+		// if r.listener.Attached() {
+		// 	r.peaks.Deactivate(r.listener.Peak()) // beware of temporal coupling!
+		// 	r.listener.Detach()
+		// }
 
-			freq := r.vfoOffset + r.centerFrequency
-			peak := r.newPeakCenteredOnFrequency(freq)
-			peak.SignalValue = 80
-			r.peaks.ForcePut(&peak)
-			r.peaks.Activate(&peak)
-			r.listener.Attach(&peak)
+		// freq := r.vfoOffset + r.centerFrequency
+		// peak := r.newPeakCenteredOnFrequency(freq)
+		// peak.SignalValue = 80
+		// r.peaks.ForcePut(&peak)
+		// r.peaks.Activate(&peak)
+		// r.listener.Attach(&peak)
 
-			r.tracer.Start()
-		}
+		// r.tracer.Start()
+		// }
 	})
 }
 
@@ -280,6 +290,8 @@ func (r *Receiver[T, F]) run() {
 	cleanupTicker := time.NewTicker(1 * time.Second)
 	defer cleanupTicker.Stop()
 
+	detachedListeners := make([]*Listener[T, F], r.listeners.Size())
+
 	for {
 		select {
 		case op := <-r.op:
@@ -289,7 +301,9 @@ func (r *Receiver[T, F]) run() {
 			// copy(peaksToShow, peaks)
 			// r.indicator.ShowPeaks(r.id, peaksToShow)
 		case <-cleanupTicker.C:
-			r.listener.CheckWriteTimeout()
+			r.listeners.ForEach(func(l *Listener[T, F]) {
+				l.CheckWriteTimeout()
+			})
 			r.peaks.Cleanup()
 		case frame := <-r.in:
 			if len(frame) == 0 {
@@ -312,18 +326,23 @@ func (r *Receiver[T, F]) run() {
 			noiseFloor := noiseFloorMean.Put(dsp.PSDValueIndB(psdNoiseFloor, r.blockSize) + dBmShift)
 			threshold := r.peakThreshold + noiseFloor
 
-			if r.listener.Attached() {
-				maxValue, _ := spectrum.Max(r.listener.PeakRange())
-
-				r.listener.Listen(maxValue, noiseFloor)
-
-				if r.mode == RandomPeakMode && r.listener.TimeoutExceeded() {
-					r.peaks.Deactivate(r.listener.Peak()) // beware of temporal coupling!
-					r.listener.Detach()
-					r.indicator.HideDecode(r.id)
-					r.tracer.Stop()
+			detachedListeners = detachedListeners[:0]
+			r.listeners.ForEach(func(l *Listener[T, F]) {
+				if !l.Attached() {
+					return
 				}
-			}
+				maxValue, _ := spectrum.Max(l.PeakRange())
+
+				l.Listen(maxValue, noiseFloor)
+
+				if r.mode == RandomPeakMode && l.TimeoutExceeded() {
+					r.peaks.Deactivate(l.Peak()) // beware of temporal coupling!
+					l.Detach()
+					detachedListeners = append(detachedListeners, l)
+					// r.tracer.Stop() // TODO handle tracing
+				}
+			})
+			r.listeners.Release(detachedListeners...)
 
 			for i := range spectrum {
 				cumulation[i] += spectrum[i]
@@ -331,7 +350,7 @@ func (r *Receiver[T, F]) run() {
 			cumulationCount++
 
 			if cumulationCount == cumulationSize {
-				if r.mode == RandomPeakMode && !r.listener.Attached() {
+				if r.mode == RandomPeakMode && r.listeners.Available() {
 					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
 
 					for _, p := range peaks {
@@ -343,22 +362,26 @@ func (r *Receiver[T, F]) run() {
 					if selectedPeak != nil {
 						log.Printf("selected peak %#v", selectedPeak)
 
-						r.peaks.Activate(selectedPeak)
-						r.listener.Attach(selectedPeak)
-						r.tracer.Start()
+						listener, ok := r.listeners.BindNext()
+						if ok {
+							r.peaks.Activate(selectedPeak)
+							listener.Attach(selectedPeak)
+						}
+						// r.tracer.Start() // TODO handle tracing
 					}
 				}
 
-				if r.tracer.Context() == traceSpectrum {
-					r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
-					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
+				// TODO handle tracing
+				// if r.tracer.Context() == traceSpectrum {
+				// 	r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
+				// 	r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
 
-					if r.listener.Attached() {
-						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", r.listener.SignalBin())
-					} else {
-						r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", -1)
-					}
-				}
+				// 	if r.listener.Attached() {
+				// 		r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", r.listener.SignalBin())
+				// 	} else {
+				// 		r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", -1)
+				// 	}
+				// }
 
 				clear(cumulation)
 				cumulationCount = 0

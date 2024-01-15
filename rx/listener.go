@@ -54,6 +54,10 @@ func NewListener[T, F dsp.Number](id string, out io.Writer, clock Clock, indicat
 	return result
 }
 
+func (l *Listener[T, F]) ID() string {
+	return l.id
+}
+
 func (l *Listener[T, F]) SetTracer(tracer trace.Tracer) {
 	l.demodulator.SetTracer(tracer)
 }
@@ -191,6 +195,22 @@ func NewListenerPool[T, F dsp.Number](size int, idPrefix string, factory Listene
 	return result
 }
 
+func (p *ListenerPool[T, F]) Size() int {
+	return p.size
+}
+
+func (p *ListenerPool[T, F]) Available() bool {
+	return len(p.listeners) < p.size
+}
+
+func (p *ListenerPool[T, F]) Reset() {
+	for _, l := range p.listeners {
+		l.Detach()
+		p.ids.Push(l.ID())
+	}
+	p.listeners = p.listeners[:0]
+}
+
 func (p *ListenerPool[T, F]) BindNext() (*Listener[T, F], bool) {
 	if len(p.listeners) == p.size {
 		return nil, false
@@ -207,13 +227,19 @@ func (p *ListenerPool[T, F]) BindNext() (*Listener[T, F], bool) {
 	return listener, true
 }
 
-func (p *ListenerPool[T, F]) Release(listener *Listener[T, F]) {
+func (p *ListenerPool[T, F]) Release(listeners ...*Listener[T, F]) {
+	for _, listener := range listeners {
+		p.release(listener)
+	}
+}
+
+func (p *ListenerPool[T, F]) release(listener *Listener[T, F]) {
 	index := p.indexOf(listener)
 	if index == -1 {
 		return
 	}
 
-	p.ids.Push(listener.id)
+	p.ids.Push(listener.ID())
 
 	if len(p.listeners) > 1 {
 		p.listeners[index] = p.listeners[len(p.listeners)-1]
@@ -223,13 +249,15 @@ func (p *ListenerPool[T, F]) Release(listener *Listener[T, F]) {
 
 func (p *ListenerPool[T, F]) indexOf(listener *Listener[T, F]) int {
 	for i, l := range p.listeners {
-		if l.id == listener.id {
+		if l.id == listener.ID() {
 			return i
 		}
 	}
 	return -1
 }
 
-func (p *ListenerPool[T, F]) Listeners() []*Listener[T, F] {
-	return p.listeners
+func (p *ListenerPool[T, F]) ForEach(f func(listener *Listener[T, F])) {
+	for _, l := range p.listeners {
+		f(l)
+	}
 }
