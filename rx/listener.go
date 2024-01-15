@@ -3,6 +3,7 @@ package rx
 import (
 	"io"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -140,4 +141,95 @@ func (l *Listener[T, F]) Listen(value T, noiseFloor T) {
 	}
 
 	l.demodulator.Tick(value, noiseFloor)
+}
+
+type IDPool []string
+
+func NewIDPool(size int, prefix string) IDPool {
+	result := make(IDPool, size)
+
+	for i := range result {
+		result[i] = prefix + strconv.Itoa(size-i)
+	}
+
+	return result
+}
+
+func (p *IDPool) Push(id string) {
+	*p = append(*p, id)
+}
+
+func (p *IDPool) Pop() (string, bool) {
+	if len(*p) == 0 {
+		return "", false
+	}
+
+	slice := *p
+	result := slice[len(slice)-1]
+	*p = slice[:len(slice)-1]
+
+	return result, true
+}
+
+type ListenerFactory[T, F dsp.Number] func(id string) *Listener[T, F]
+
+type ListenerPool[T, F dsp.Number] struct {
+	listeners []*Listener[T, F]
+	size      int
+	ids       IDPool
+	factory   ListenerFactory[T, F]
+}
+
+func NewListenerPool[T, F dsp.Number](size int, idPrefix string, factory ListenerFactory[T, F]) *ListenerPool[T, F] {
+	result := &ListenerPool[T, F]{
+		size:      size,
+		listeners: make([]*Listener[T, F], 0, size),
+		ids:       NewIDPool(size, idPrefix),
+		factory:   factory,
+	}
+
+	return result
+}
+
+func (p *ListenerPool[T, F]) BindNext() (*Listener[T, F], bool) {
+	if len(p.listeners) == p.size {
+		return nil, false
+	}
+
+	id, ok := p.ids.Pop()
+	if !ok {
+		return nil, false
+	}
+
+	listener := p.factory(id)
+	p.listeners = append(p.listeners, listener)
+
+	return listener, true
+}
+
+func (p *ListenerPool[T, F]) Release(listener *Listener[T, F]) {
+	index := p.indexOf(listener)
+	if index == -1 {
+		return
+	}
+
+	p.ids.Push(listener.id)
+
+	if len(p.listeners) > 1 {
+		p.listeners[index] = p.listeners[len(p.listeners)-1]
+	}
+	p.listeners = p.listeners[:len(p.listeners)-1]
+}
+
+func (p *ListenerPool[T, F]) indexOf(listener *Listener[T, F]) int {
+	for i, l := range p.listeners {
+		if l.id == listener.id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p *ListenerPool[T, F]) Listeners() []*Listener[T, F] {
+	return p.listeners
 }

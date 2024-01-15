@@ -123,13 +123,19 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 	r.frequencyMapping = dsp.NewFrequencyMapping(r.sampleRate, r.blockSize, r.centerFrequency)
 	r.peaks = NewPeaksTable[T, F](r.blockSize, r.clock)
 
-	r.listener = NewListener[T, F](r.id, os.Stdout, r.clock, r.indicator, r.sampleRate, r.blockSize)
-	r.listener.SetAttachmentTimeout(r.attachmentTimeout)
-	r.listener.SetSilenceTimeout(r.silenceTimeout)
-	r.listener.SetSignalThreshold(r.peakThreshold)
-	r.listener.SetTracer(r.tracer)
+	r.listener = r.newListener(r.id)
 
 	go r.run()
+}
+
+func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
+	// TODO handle the output properly instead of hardcoding os.Stdout
+	result := NewListener[T, F](id, os.Stdout, r.clock, r.indicator, r.sampleRate, r.blockSize)
+	result.SetAttachmentTimeout(r.attachmentTimeout)
+	result.SetSilenceTimeout(r.silenceTimeout)
+	result.SetSignalThreshold(r.peakThreshold)
+	result.SetTracer(r.tracer)
+	return result
 }
 
 func (r *Receiver[T, F]) Stop() {
