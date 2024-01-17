@@ -1,6 +1,7 @@
 package rx
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -273,11 +274,17 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 		case ScanMode:
 			freq := r.vfoOffset + r.centerFrequency
 			bin := r.frequencyMapping.FrequencyToBin(freq)
+			found := false
+			r.out.SetActive("")
 			r.listeners.ForEach(func(l *Listener[T, F]) {
 				if l.Peak().ContainsBin(bin) {
 					r.out.SetActive(l.ID())
+					found = true
 				}
 			})
+			if found {
+				fmt.Fprintln(r.out)
+			}
 		}
 	})
 }
@@ -465,12 +472,16 @@ func NewChannelWriter(out io.Writer) *ChannelWriter {
 	}
 }
 
+func (w *ChannelWriter) Write(bytes []byte) (int, error) {
+	return w.out.Write(bytes)
+}
+
 func (w *ChannelWriter) write(channel string, bytes []byte) (int, error) {
 	if channel != w.activeChannel {
 		// ignore everything, except data for the active channel
 		return len(bytes), nil
 	}
-	return w.out.Write(bytes)
+	return w.Write(bytes)
 }
 
 func (w *ChannelWriter) Channel(channel string) WriterFunc {
