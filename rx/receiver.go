@@ -78,6 +78,8 @@ type Receiver[T, F dsp.Number] struct {
 
 	in               chan []T
 	op               chan func()
+	stop             chan struct{}
+	stopped          chan struct{}
 	fft              *dsp.FFT[T]
 	frequencyMapping *dsp.FrequencyMapping[F]
 	peaks            *PeaksTable[T, F]
@@ -135,6 +137,8 @@ func (r *Receiver[T, F]) Start(sampleRate int, blockSize int) {
 		return
 	}
 
+	r.stop = make(chan struct{})
+	r.stopped = make(chan struct{})
 	r.in = make(chan []T, iqBufferSize)
 	r.op = make(chan func())
 
@@ -155,8 +159,13 @@ func (r *Receiver[T, F]) Stop() {
 
 	r.tracer.Stop()
 
+	close(r.stop)
+	<-r.stopped
 	close(r.in)
 	close(r.op)
+
+	r.stop = nil
+	r.stopped = nil
 	r.in = nil
 	r.op = nil
 }
@@ -295,6 +304,8 @@ func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
 }
 
 func (r *Receiver[T, F]) run() {
+	defer close(r.stopped)
+
 	var spectrum dsp.Block[T]
 	var psd dsp.Block[T]
 	var cumulation dsp.Block[T]
@@ -310,6 +321,8 @@ func (r *Receiver[T, F]) run() {
 
 	for {
 		select {
+		case <-r.stop:
+			return
 		case op := <-r.op:
 			op()
 		case <-cleanupTicker.C:
@@ -372,14 +385,11 @@ func (r *Receiver[T, F]) run() {
 
 					selectedPeak := r.peaks.FindNext()
 					if selectedPeak != nil {
-						log.Printf("selected peak %#v", selectedPeak)
-
 						listener, ok := r.listeners.BindNext()
 						if ok {
 							r.peaks.Activate(selectedPeak)
 							listener.Attach(selectedPeak)
 						}
-						// r.tracer.Start() // TODO handle tracing
 					}
 				}
 

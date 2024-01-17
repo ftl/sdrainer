@@ -2,7 +2,6 @@ package dsp
 
 import (
 	"fmt"
-	"log"
 	"math"
 
 	"github.com/mjibson/go-dsp/fft"
@@ -238,7 +237,6 @@ func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) T {
 
 func FindPeaks[T, F Number](peaks []Peak[T, F], spectrum Block[T], cumulationSize int, threshold T, frequencyMapping *FrequencyMapping[F]) []Peak[T, F] {
 	peaks = peaks[:0]
-	log.Printf("frequency mapping: %s", frequencyMapping)
 
 	var currentPeak *Peak[T, F]
 	for i, v := range spectrum {
