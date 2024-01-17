@@ -155,7 +155,6 @@ func (p *Process) onConnected(connected bool) {
 }
 
 var (
-	peakColor   tci.ARGB = tci.NewARGB(255, 255, 0, 0)
 	decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
 	spotColor   tci.ARGB = tci.NewARGB(255, 255, 255, 0)
 )
@@ -168,11 +167,7 @@ func (p *Process) ShowDecode(id string, peak dsp.Peak[float32, int]) {
 
 func (p *Process) showDecode(id string, peak dsp.Peak[float32, int]) {
 	p.client.DeleteSpot(id)
-	// p.client.AddSpot(">", tci.ModeCW, peak.FromFrequency, decodeColor, "SDRainer")
 	p.client.AddSpot(id, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
-	// p.client.AddSpot("<", tci.ModeCW, peak.ToFrequency, decodeColor, "SDRainer")
-	offset := peak.SignalFrequency - p.receiver.CenterFrequency()
-	p.client.SetIF(p.trx, tci.VFOA, offset)
 }
 
 func (p *Process) HideDecode(id string) {
@@ -180,9 +175,7 @@ func (p *Process) HideDecode(id string) {
 }
 
 func (p *Process) hideDecode(id string) {
-	// p.client.DeleteSpot(">")
 	p.client.DeleteSpot(id)
-	// p.client.DeleteSpot("<")
 }
 
 func (p *Process) ShowSpot(_ string, callsign string, frequency int) {
@@ -192,7 +185,7 @@ func (p *Process) ShowSpot(_ string, callsign string, frequency int) {
 }
 
 func (p *Process) showSpot(callsign string, frequency int) {
-	p.client.AddSpot(callsign, tci.ModeCW, frequency, spotColor, "SDRainer")
+	p.client.AddSpot(">"+callsign+"<", tci.ModeCW, frequency, spotColor, "SDRainer")
 }
 
 type tciListener struct {
