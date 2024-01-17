@@ -271,6 +271,7 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 			r.peaks.Activate(&peak)
 			listener.Attach(&peak)
 			r.out.SetActive(listener.ID())
+			r.tracer.Start()
 		case ScanMode:
 			freq := r.vfoOffset + r.centerFrequency
 			bin := r.frequencyMapping.FrequencyToBin(freq)
@@ -371,7 +372,6 @@ func (r *Receiver[T, F]) run() {
 					r.peaks.Deactivate(l.Peak()) // beware of temporal coupling!
 					l.Detach()
 					detachedListeners = append(detachedListeners, l)
-					// r.tracer.Stop() // TODO handle tracing
 				}
 			})
 			r.listeners.Release(detachedListeners...)
@@ -400,17 +400,18 @@ func (r *Receiver[T, F]) run() {
 					}
 				}
 
-				// TODO handle tracing
-				// if r.tracer.Context() == traceSpectrum {
-				// 	r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
-				// 	r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
+				if r.tracer.Context() == traceSpectrum {
+					r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
+					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
 
-				// 	if r.listener.Attached() {
-				// 		r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", r.listener.SignalBin())
-				// 	} else {
-				// 		r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", -1)
-				// 	}
-				// }
+					signalBin := -1
+					if r.mode == VFOMode {
+						r.listeners.ForEach(func(l *Listener[T, F]) {
+							signalBin = l.Peak().SignalBin
+						})
+					}
+					r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", signalBin)
+				}
 
 				clear(cumulation)
 				cumulationCount = 0
