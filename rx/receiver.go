@@ -60,8 +60,6 @@ const (
 
 type ReceiverIndicator[T, F dsp.Number] interface {
 	ListenerIndicator[T, F]
-
-	ShowPeaks(receiver string, peaks []dsp.Peak[T, F])
 }
 
 type Receiver[T, F dsp.Number] struct {
@@ -284,9 +282,6 @@ func (r *Receiver[T, F]) run() {
 
 	cumulationCount := 0
 
-	peakTicker := time.NewTicker(5 * time.Second)
-	defer peakTicker.Stop()
-
 	cleanupTicker := time.NewTicker(1 * time.Second)
 	defer cleanupTicker.Stop()
 
@@ -296,10 +291,6 @@ func (r *Receiver[T, F]) run() {
 		select {
 		case op := <-r.op:
 			op()
-		case <-peakTicker.C:
-			// peaksToShow := make([]dsp.peak[T, int], len(peaks))
-			// copy(peaksToShow, peaks)
-			// r.indicator.ShowPeaks(r.id, peaksToShow)
 		case <-cleanupTicker.C:
 			r.listeners.ForEach(func(l *Listener[T, F]) {
 				l.CheckWriteTimeout()

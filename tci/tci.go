@@ -154,28 +154,11 @@ func (p *Process) onConnected(connected bool) {
 	p.client.StartIQ(p.trx)
 }
 
-const (
-	decodeLabel = "DECODE"
-)
-
 var (
 	peakColor   tci.ARGB = tci.NewARGB(255, 255, 0, 0)
 	decodeColor tci.ARGB = tci.NewARGB(255, 0, 255, 0)
 	spotColor   tci.ARGB = tci.NewARGB(255, 255, 255, 0)
 )
-
-func (p *Process) ShowPeaks(_ string, peaks []dsp.Peak[float32, int]) {
-	p.doAsync(func() {
-		p.showPeaks(peaks)
-	})
-}
-
-func (p *Process) showPeaks(peaks []dsp.Peak[float32, int]) {
-	for _, peak := range peaks {
-		label := fmt.Sprintf("%d w%d", peak.SignalFrequency, peak.Width())
-		p.client.AddSpot(label, tci.ModeCW, peak.SignalFrequency, peakColor, "SDRainer")
-	}
-}
 
 func (p *Process) ShowDecode(id string, peak dsp.Peak[float32, int]) {
 	p.doAsync(func() {
