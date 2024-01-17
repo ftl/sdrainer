@@ -208,6 +208,11 @@ func (p Peak[T, F]) WidthHz() F {
 	return p.ToFrequency - p.FromFrequency
 }
 
+// ContainsBin indicates if the given bin is within this peak.
+func (p Peak[T, F]) ContainsBin(bin int) bool {
+	return p.From >= bin && p.To <= bin
+}
+
 func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) T {
 	windowSize := len(psd) / 10
 	minValue := psd[0]

@@ -1,6 +1,7 @@
 package rx
 
 import (
+	"io"
 	"log"
 	"os"
 	"time"
@@ -80,6 +81,7 @@ type Receiver[T, F dsp.Number] struct {
 	fft              *dsp.FFT[T]
 	frequencyMapping *dsp.FrequencyMapping[F]
 	peaks            *PeaksTable[T, F]
+	out              *ChannelWriter
 
 	listeners         *ListenerPool[T, F]
 	silenceTimeout    time.Duration
@@ -104,16 +106,23 @@ func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock, ind
 		attachmentTimeout: defaultAttachmentTimeout,
 
 		fft: dsp.NewFFT[T](),
+		out: NewChannelWriter(os.Stdout),
 
 		tracer: new(trace.NoTracer),
 	}
-	result.listeners = NewListenerPool[T, F](defaultListenerPoolSize, result.id, result.newListener)
+
+	listenerPoolSize := defaultListenerPoolSize
+	if mode == VFOMode {
+		listenerPoolSize = 1
+	}
+	result.listeners = NewListenerPool[T, F](listenerPoolSize, result.id, result.newListener)
+
 	return result
 }
 
 func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
 	// TODO handle the output properly instead of hardcoding os.Stdout
-	result := NewListener[T, F](id, os.Stdout, r.clock, r.indicator, r.sampleRate, r.blockSize)
+	result := NewListener[T, F](id, r.out.Channel(id), r.clock, r.indicator, r.sampleRate, r.blockSize)
 	result.SetAttachmentTimeout(r.attachmentTimeout)
 	result.SetSilenceTimeout(r.silenceTimeout)
 	result.SetSignalThreshold(r.peakThreshold)
@@ -230,25 +239,37 @@ func (r *Receiver[T, F]) CenterFrequency() F {
 func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 	r.do(func() {
 		r.vfoOffset = offset
-		if r.blockSize == 0 {
+		if r.in == nil {
 			return
 		}
-		// if r.mode == VFOMode {
-		// TODO implement the VFO mode using the ListenerPool
-		// if r.listener.Attached() {
-		// 	r.peaks.Deactivate(r.listener.Peak()) // beware of temporal coupling!
-		// 	r.listener.Detach()
-		// }
 
-		// freq := r.vfoOffset + r.centerFrequency
-		// peak := r.newPeakCenteredOnFrequency(freq)
-		// peak.SignalValue = 80
-		// r.peaks.ForcePut(&peak)
-		// r.peaks.Activate(&peak)
-		// r.listener.Attach(&peak)
+		switch r.mode {
+		case VFOMode:
+			if !r.listeners.Available() {
+				r.listeners.Reset()
+			}
+			listener, ok := r.listeners.BindNext()
+			if !ok {
+				log.Printf("cannot bind listener to VFO")
+				return
+			}
 
-		// r.tracer.Start()
-		// }
+			freq := r.vfoOffset + r.centerFrequency
+			peak := r.newPeakCenteredOnFrequency(freq)
+			peak.SignalValue = 80
+			r.peaks.ForcePut(&peak)
+			r.peaks.Activate(&peak)
+			listener.Attach(&peak)
+			r.out.SetActive(listener.ID())
+		case ScanMode:
+			freq := r.vfoOffset + r.centerFrequency
+			bin := r.frequencyMapping.FrequencyToBin(freq)
+			r.listeners.ForEach(func(l *Listener[T, F]) {
+				if l.Peak().ContainsBin(bin) {
+					r.out.SetActive(l.ID())
+				}
+			})
+		}
 	})
 }
 
@@ -415,4 +436,39 @@ func (r *Receiver[T, F]) newPeakCenteredOnBin(centerBin int) dsp.Peak[T, F] {
 	peak.SignalFrequency = peak.CenterFrequency()
 
 	return peak
+}
+
+type WriterFunc func([]byte) (int, error)
+
+func (f WriterFunc) Write(bytes []byte) (int, error) {
+	return f(bytes)
+}
+
+type ChannelWriter struct {
+	out           io.Writer
+	activeChannel string
+}
+
+func NewChannelWriter(out io.Writer) *ChannelWriter {
+	return &ChannelWriter{
+		out: out,
+	}
+}
+
+func (w *ChannelWriter) write(channel string, bytes []byte) (int, error) {
+	if channel != w.activeChannel {
+		// ignore everything, except data for the active channel
+		return len(bytes), nil
+	}
+	return w.out.Write(bytes)
+}
+
+func (w *ChannelWriter) Channel(channel string) WriterFunc {
+	return func(bytes []byte) (int, error) {
+		return w.write(channel, bytes)
+	}
+}
+
+func (w *ChannelWriter) SetActive(channel string) {
+	w.activeChannel = channel
 }
