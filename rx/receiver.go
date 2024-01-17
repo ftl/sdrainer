@@ -54,8 +54,8 @@ func (c *manualClock) Add(d time.Duration) {
 type ReceiverMode string
 
 const (
-	VFOMode        ReceiverMode = "vfo"
-	RandomPeakMode ReceiverMode = "random"
+	VFOMode  ReceiverMode = "vfo"
+	ScanMode ReceiverMode = "scan"
 )
 
 type ReceiverIndicator[T, F dsp.Number] interface {
@@ -326,7 +326,7 @@ func (r *Receiver[T, F]) run() {
 
 				l.Listen(maxValue, noiseFloor)
 
-				if r.mode == RandomPeakMode && l.TimeoutExceeded() {
+				if r.mode == ScanMode && l.TimeoutExceeded() {
 					r.peaks.Deactivate(l.Peak()) // beware of temporal coupling!
 					l.Detach()
 					detachedListeners = append(detachedListeners, l)
@@ -341,7 +341,7 @@ func (r *Receiver[T, F]) run() {
 			cumulationCount++
 
 			if cumulationCount == cumulationSize {
-				if r.mode == RandomPeakMode && r.listeners.Available() {
+				if r.mode == ScanMode && r.listeners.Available() {
 					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
 
 					for _, p := range peaks {
