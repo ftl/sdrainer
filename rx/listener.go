@@ -2,7 +2,6 @@ package rx
 
 import (
 	"io"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -91,7 +90,7 @@ func (l *Listener[T, F]) Attach(peak *dsp.Peak[T, F]) {
 	l.textProcessor.Reset()
 
 	l.indicator.ShowDecode(l.id, *peak)
-	log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
+	// log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
 }
 
 func (l *Listener[T, F]) Attached() bool {
@@ -102,7 +101,7 @@ func (l *Listener[T, F]) Detach() {
 	l.peak = nil
 
 	l.indicator.HideDecode(l.id)
-	log.Printf("\ndemodulation stopped\n")
+	// log.Printf("\ndemodulation stopped\n")
 }
 
 func (l *Listener[T, F]) Peak() *dsp.Peak[T, F] {
@@ -127,11 +126,11 @@ func (l *Listener[T, F]) TimeoutExceeded() bool {
 	now := l.clock.Now()
 	attachmentExceeded := now.Sub(l.lastAttach) > l.attachmentTimeout
 	silenceExceeded := now.Sub(l.textProcessor.LastWrite()) > l.silenceTimeout
-	if attachmentExceeded || silenceExceeded {
-		log.Printf("timeout a: %v %t s: %v %t", l.attachmentTimeout, attachmentExceeded, l.silenceTimeout, silenceExceeded)
-		// } else {
-		// 	log.Printf("waiting for timeout a: %v %v s: %v %v", now.Sub(l.lastAttach), l.attachmentTimeout, now.Sub(l.textProcessor.LastWrite()), l.silenceTimeout)
-	}
+	// if attachmentExceeded || silenceExceeded {
+	// 	log.Printf("timeout a: %v %t s: %v %t", l.attachmentTimeout, attachmentExceeded, l.silenceTimeout, silenceExceeded)
+	// } else {
+	// 	log.Printf("waiting for timeout a: %v %v s: %v %v", now.Sub(l.lastAttach), l.attachmentTimeout, now.Sub(l.textProcessor.LastWrite()), l.silenceTimeout)
+	// }
 	return attachmentExceeded || silenceExceeded
 }
 
