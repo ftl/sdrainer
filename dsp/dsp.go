@@ -279,3 +279,138 @@ func (v *RollingMean[T]) Reset() {
 	v.sumForMean = 0
 	v.mean = 0
 }
+
+// RollingHistory provides access to the last <length> values and a set of functions based on those historical values.
+type RollingHistory[T Number] struct {
+	ring   []T
+	length int
+	next   int
+}
+
+// NewRollingHistory returns a new RollingHistory of the given length.
+func NewRollingHistory[T Number](length int) *RollingHistory[T] {
+	return &RollingHistory[T]{
+		ring:   make([]T, length),
+		length: length,
+		next:   0,
+	}
+}
+
+func (h *RollingHistory[T]) ringIndex(index int) int {
+	if index > h.length {
+		panic(fmt.Sprintf("index %d is greater then the available history length of %d", index, h.length))
+	}
+	return (h.next - index + h.length) % h.length
+}
+
+func (h *RollingHistory[T]) forEach(sliceLength int, f func(value T)) {
+	if sliceLength > h.length {
+		panic(fmt.Sprintf("history length of %d exceeded: %d", h.length, sliceLength))
+	}
+	for i := 1; i <= sliceLength; i++ {
+		value := h.ring[h.ringIndex(i)]
+		f(value)
+	}
+}
+
+// Reset the rolling history.
+func (h *RollingHistory[T]) Reset() {
+	clear(h.ring)
+	h.next = 0
+}
+
+// Get provides the value that was inserted <index> Put calls in the past.
+func (h *RollingHistory[T]) Get(index int) T {
+	return h.ring[h.ringIndex(index)]
+}
+
+// Put a new value into the history.
+func (h *RollingHistory[T]) Put(value T) {
+	h.ring[h.next] = value
+	h.next = (h.next + 1) % h.length
+}
+
+// Sum up the last n values.
+func (h *RollingHistory[T]) Sum(n int) T {
+	var sum T
+	h.forEach(n, func(value T) {
+		sum += value
+	})
+	return sum
+}
+
+// Max of the last n values.
+func (h *RollingHistory[T]) Max(n int) T {
+	max := h.Get(1)
+	h.forEach(n, func(value T) {
+		if max < value {
+			max = value
+		}
+	})
+	return max
+}
+
+// Min of the last n values.
+func (h *RollingHistory[T]) Min(n int) T {
+	min := h.Get(1)
+	h.forEach(n, func(value T) {
+		if min > value {
+			min = value
+		}
+	})
+	return min
+}
+
+// SumAt sums up the values at the given indexes.
+func (h *RollingHistory[T]) SumAt(indexes ...int) T {
+	var sum T
+	for _, index := range indexes {
+		sum += h.Get(index)
+	}
+	return sum
+}
+
+// MaxAt returns the maximum of the values at the given indexes.
+func (h *RollingHistory[T]) MaxAt(indexes ...int) T {
+	max := h.Get(indexes[0])
+	for _, index := range indexes {
+		value := h.Get(index)
+		if max < value {
+			max = value
+		}
+	}
+	return max
+}
+
+// MinAt returns the minimum of the values at the given indexes.
+func (h *RollingHistory[T]) MinAt(indexes ...int) T {
+	min := h.Get(indexes[0])
+	for _, index := range indexes {
+		value := h.Get(index)
+		if min > value {
+			min = value
+		}
+	}
+	return min
+}
+
+// Mean of the last n values.
+func (h *RollingHistory[T]) Mean(n int) T {
+	sum := h.Sum(n)
+	return T(float64(sum) / float64(n))
+}
+
+// Variance of the last n values.
+func (h *RollingHistory[T]) Variance(n int) float64 {
+	mean := float64(h.Sum(n)) / float64(n)
+	var sum float64
+	h.forEach(n, func(value T) {
+		sum += math.Pow(float64(value)-mean, 2)
+	})
+	return sum / float64(n)
+}
+
+// SDev returns the standard deviation of the last n values.
+func (h *RollingHistory[T]) SDev(n int) float64 {
+	return math.Sqrt(h.Variance(n))
+}

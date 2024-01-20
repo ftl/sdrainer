@@ -1,6 +1,7 @@
 package dsp
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -320,5 +321,51 @@ func mixWithNoise(out []float32, amplitude float64) {
 			noise *= -1
 		}
 		out[i] = float32(math.Max(math.Min(1.0, float64(out[i]+noise)), -1.0))
+	}
+}
+
+func TestValueHistory_RingIndex(t *testing.T) {
+	tt := []struct {
+		length   int
+		next     int
+		index    int
+		expected int
+	}{
+		{
+			length:   10,
+			next:     0,
+			index:    1,
+			expected: 9,
+		},
+		{
+			length:   10,
+			next:     1,
+			index:    1,
+			expected: 0,
+		},
+		{
+			length:   10,
+			next:     9,
+			index:    10,
+			expected: 9,
+		},
+		{
+			length:   10,
+			next:     5,
+			index:    5,
+			expected: 0,
+		},
+	}
+	for i, tc := range tt {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			h := &RollingHistory[int]{
+				length: tc.length,
+				next:   tc.next,
+			}
+
+			actual := h.ringIndex(tc.index)
+
+			assert.Equal(t, tc.expected, actual)
+		})
 	}
 }
