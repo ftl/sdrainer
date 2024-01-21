@@ -212,27 +212,43 @@ func (p Peak[T, F]) ContainsBin(bin int) bool {
 	return p.From >= bin && p.To <= bin
 }
 
-func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) T {
+func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) (T, float64) {
 	windowSize := len(psd) / 10
-	minValue := psd[0]
-	var sum T
+	minValue := float64(psd[0])
+	var sum float64
 	count := 0
 	first := true
+	from := 0
+	var resultMean float64
+	resultFrom := 0
+	resultTo := 0
 	for i := edgeWidth; i < len(psd)-edgeWidth; i++ {
+		if count == 0 {
+			from = i
+		}
 		if count == windowSize {
 			count = 0
-			mean := sum / T(windowSize)
+			mean := sum / float64(windowSize)
 			if mean < minValue || first {
 				minValue = mean
 				first = false
+				resultMean = mean
+				resultFrom = from
+				resultTo = i
 			}
 			sum = 0
 		}
-		sum += psd[i]
+		sum += float64(psd[i])
 		count++
 	}
 
-	return minValue
+	sum = 0
+	for i := resultFrom; i <= resultTo; i++ {
+		sum += math.Pow(float64(psd[i])-resultMean, 2)
+	}
+	variance := sum / float64(windowSize)
+
+	return T(minValue), variance
 }
 
 func FindPeaks[T, F Number](peaks []Peak[T, F], spectrum Block[T], cumulationSize int, threshold T, frequencyMapping *FrequencyMapping[F]) []Peak[T, F] {
@@ -261,12 +277,16 @@ func FindPeaks[T, F Number](peaks []Peak[T, F], spectrum Block[T], cumulationSiz
 		currentPeak.To = len(spectrum) - 1
 		currentPeak.FromFrequency = frequencyMapping.BinToFrequency(currentPeak.From, BinFrom)
 		currentPeak.ToFrequency = frequencyMapping.BinToFrequency(currentPeak.To, BinTo)
-		centerCorrection := PeakCenterCorrection[T, F](currentPeak.SignalBin, spectrum)
-		currentPeak.SignalFrequency = frequencyMapping.BinToFrequency(currentPeak.SignalBin, centerCorrection)
+		currentPeak.SignalFrequency = SignalFrequency(currentPeak.SignalBin, spectrum, frequencyMapping)
 		peaks = append(peaks, *currentPeak)
 	}
 
 	return peaks
+}
+
+func SignalFrequency[T, F Number](bin int, spectrum Block[T], frequencyMapping *FrequencyMapping[F]) F {
+	centerCorrection := PeakCenterCorrection[T, F](bin, spectrum)
+	return frequencyMapping.BinToFrequency(bin, centerCorrection)
 }
 
 func PeakCenterCorrection[T, F Number](bin int, spectrum Block[T]) BinLocation {

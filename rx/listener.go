@@ -69,10 +69,6 @@ func (l *Listener[T, F]) SetAttachmentTimeout(timeout time.Duration) {
 	l.attachmentTimeout = timeout
 }
 
-func (l *Listener[T, F]) SetSignalThreshold(threshold T) {
-	l.demodulator.SetSignalThreshold(threshold)
-}
-
 func (l *Listener[T, F]) SetSignalDebounce(debounce int) {
 	l.demodulator.SetSignalDebounce(debounce)
 }

@@ -10,15 +10,12 @@ import (
 const (
 	traceDemod = "demod"
 
-	defaultSignalThreshold = 15
-	defaultSignalDebounce  = 1
+	defaultSignalDebounce = 1
 )
 
 // SpectralDemodulator demodulates a CW signal detected in a spectral representation of the frequency domain.
 // M is used to represent magnitude values, F is used to represent frequency values.
 type SpectralDemodulator[M, F dsp.Number] struct {
-	signalThreshold M
-
 	signalDebouncer *dsp.BoolDebouncer
 	decoder         *Decoder
 	tracer          trace.Tracer
@@ -26,17 +23,12 @@ type SpectralDemodulator[M, F dsp.Number] struct {
 
 func NewSpectralDemodulator[M, F dsp.Number](out io.Writer, sampleRate int, blockSize int) *SpectralDemodulator[M, F] {
 	result := &SpectralDemodulator[M, F]{
-		signalThreshold: defaultSignalThreshold,
 		signalDebouncer: dsp.NewBoolDebouncer(defaultSignalDebounce),
 		decoder:         NewDecoder(out, sampleRate, blockSize),
 		tracer:          new(trace.NoTracer),
 	}
 
 	return result
-}
-
-func (d *SpectralDemodulator[M, F]) SetSignalThreshold(threshold M) {
-	d.signalThreshold = threshold
 }
 
 func (d *SpectralDemodulator[M, F]) SetSignalDebounce(debounce int) {
@@ -52,8 +44,7 @@ func (d *SpectralDemodulator[M, F]) Reset() {
 	d.decoder.Reset()
 }
 
-func (d *SpectralDemodulator[M, F]) Tick(value M, noiseFloor M) {
-	threshold := d.signalThreshold + noiseFloor
+func (d *SpectralDemodulator[M, F]) Tick(value M, threshold M) {
 	state := value > threshold
 	debounced := d.signalDebouncer.Debounce(state)
 
@@ -64,5 +55,5 @@ func (d *SpectralDemodulator[M, F]) Tick(value M, noiseFloor M) {
 	if debounced {
 		stateInt = 80
 	}
-	d.tracer.Trace(traceDemod, "%f;%f;%f;%d\n", noiseFloor, threshold, value, stateInt)
+	d.tracer.Trace(traceDemod, "%f;%f;%d\n", threshold, value, stateInt)
 }

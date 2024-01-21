@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"time"
 
@@ -18,7 +19,7 @@ const (
 	cumulationSize = 100
 	dBmShift       = 120
 	peakPadding    = 0
-	noiseWindow    = 30
+	noiseWindow    = 60
 
 	defaultPeakThreshold    = 15
 	defaultEdgeWidth        = 70
@@ -128,7 +129,6 @@ func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
 	result := NewListener[T, F](id, r.out.Channel(id), r.clock, r.indicator, r.sampleRate, r.blockSize)
 	result.SetAttachmentTimeout(r.attachmentTimeout)
 	result.SetSilenceTimeout(r.silenceTimeout)
-	result.SetSignalThreshold(r.peakThreshold)
 	result.SetTracer(r.tracer)
 	return result
 }
@@ -191,9 +191,6 @@ func (r *Receiver[T, F]) SetTracer(tracer trace.Tracer) {
 func (r *Receiver[T, F]) SetPeakThreshold(threshold T) {
 	r.do(func() {
 		r.peakThreshold = threshold
-		r.listeners.ForEach(func(l *Listener[T, F]) {
-			l.SetSignalThreshold(threshold)
-		})
 	})
 }
 
@@ -319,6 +316,7 @@ func (r *Receiver[T, F]) run() {
 	var cumulation dsp.Block[T]
 	var peaks []dsp.Peak[T, F]
 	noiseFloorMean := dsp.NewRollingMean[T](noiseWindow)
+	noiseDeviationMean := dsp.NewRollingMean[T](noiseWindow)
 
 	cumulationCount := 0
 
@@ -355,18 +353,20 @@ func (r *Receiver[T, F]) run() {
 			}
 			r.fft.IQToSpectrumAndPSD(spectrum, psd, frame, shiftedMagnitude)
 
-			psdNoiseFloor := dsp.FindNoiseFloor(psd, r.edgeWidth)
+			psdNoiseFloor, noiseVariance := dsp.FindNoiseFloor(psd, r.edgeWidth)
+			// log.Printf("noise variance %f %f", dsp.PSDValueIndB(T(noiseVariance), r.blockSize), dsp.PSDValueIndB(T(math.Sqrt(noiseVariance)), r.blockSize)+dBmShift)
+			noiseDeviation := noiseDeviationMean.Put(T(float64(dsp.PSDValueIndB(T(math.Sqrt(noiseVariance)), r.blockSize)+dBmShift) * 0.25))
 			noiseFloor := noiseFloorMean.Put(dsp.PSDValueIndB(psdNoiseFloor, r.blockSize) + dBmShift)
-			threshold := r.peakThreshold + noiseFloor
+			peakThreshold := r.peakThreshold + noiseFloor
 
 			detachedListeners = detachedListeners[:0]
 			r.listeners.ForEach(func(l *Listener[T, F]) {
 				if !l.Attached() {
 					return
 				}
-				maxValue, _ := spectrum.Max(l.PeakRange())
 
-				l.Listen(maxValue, noiseFloor)
+				signalValue := spectrum[l.SignalBin()]
+				l.Listen(signalValue, noiseFloor+noiseDeviation)
 
 				if r.mode == ScanMode && l.TimeoutExceeded() {
 					r.peaks.Deactivate(l.Peak()) // beware of temporal coupling!
@@ -383,7 +383,7 @@ func (r *Receiver[T, F]) run() {
 
 			if cumulationCount == cumulationSize {
 				if r.mode == ScanMode && r.listeners.Available() {
-					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, threshold, r.frequencyMapping)
+					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, peakThreshold, r.frequencyMapping)
 
 					for _, p := range peaks {
 						centeredPeak := r.newPeakCenteredOnSignal(p)
@@ -402,7 +402,7 @@ func (r *Receiver[T, F]) run() {
 
 				if r.tracer.Context() == traceSpectrum {
 					r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
-					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", threshold)
+					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", peakThreshold)
 
 					signalBin := -1
 					if r.mode == VFOMode {
