@@ -10,7 +10,6 @@ import (
 
 	"github.com/ftl/sdrainer/rx"
 	"github.com/ftl/sdrainer/tci"
-	"github.com/ftl/sdrainer/trace"
 )
 
 var tciFlags = struct {
@@ -22,9 +21,7 @@ var tciFlags = struct {
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
 
-	traceTCI         bool
-	traceContext     string
-	traceDestination string
+	traceTCI bool
 }{}
 
 var tciCmd = &cobra.Command{
@@ -45,8 +42,7 @@ func init() {
 	tciCmd.Flags().DurationVar(&tciFlags.attachmentTimeout, "busy", 1*time.Minute, "the time of decoding a busy signal until the next random peak is selected")
 
 	tciCmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
-	tciCmd.Flags().StringVar(&tciFlags.traceContext, "trace", "", "spectrum | demod | decode")
-	tciCmd.Flags().StringVar(&tciFlags.traceDestination, "trace_to", "", "file:<filename> | udp:<host:port>")
+	tciCmd.Flags().MarkHidden("trace_tci")
 }
 
 func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
@@ -67,27 +63,4 @@ func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 
 	<-ctx.Done()
 	process.Close()
-}
-
-func createTracer() (trace.Tracer, bool) {
-	if tciFlags.traceDestination == "" {
-		log.Printf("no destination")
-		return nil, false
-	}
-
-	protocol, destination, found := strings.Cut(tciFlags.traceDestination, ":")
-	if !found {
-		log.Printf("wrong parts %v", tciFlags.traceDestination)
-		return nil, false
-	}
-
-	switch strings.ToLower(protocol) {
-	case "file":
-		return trace.NewFileTracer(tciFlags.traceContext, destination), true
-	case "udp":
-		return trace.NewUDPTracer(tciFlags.traceContext, destination), true
-	default:
-		log.Printf("wrong protocol %v", protocol)
-		return nil, false
-	}
 }

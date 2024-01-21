@@ -52,7 +52,7 @@ func New(host string, trx int, mode rx.ReceiverMode, traceTCI bool) (*Process, e
 	result := &Process{
 		client:  client,
 		trx:     trx,
-		opAsync: make(chan func(), 10),
+		opAsync: make(chan func(), 100),
 		close:   make(chan struct{}),
 		closed:  make(chan struct{}),
 	}
@@ -90,7 +90,12 @@ func (p *Process) run() {
 }
 
 func (p *Process) doAsync(f func()) {
-	p.opAsync <- f
+	select {
+	case <-p.closed:
+		f()
+	default:
+		p.opAsync <- f
+	}
 }
 
 func (p *Process) SetTracer(tracer trace.Tracer) {
