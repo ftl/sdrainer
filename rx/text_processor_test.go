@@ -156,7 +156,7 @@ func TestTextProcessor_CollectCallsign(t *testing.T) {
 	}
 
 	t.Logf("collected callsigns %v", p.collectedCallsigns)
-	assert.Equal(t, 3, p.collectedCallsigns["dl1abc"])
+	assert.Equal(t, 3, p.collectedCallsigns["DL1ABC"].count)
 }
 
 func TestTextProcessor_WriteTimeout(t *testing.T) {
@@ -166,8 +166,8 @@ func TestTextProcessor_WriteTimeout(t *testing.T) {
 		p.Write([]byte(string(c)))
 	}
 
-	assert.Equal(t, 0, p.collectedCallsigns["dl1abc"])
+	assert.Equal(t, 0, p.collectedCallsigns["DL1ABC"].count)
 
 	p.WriteTimeout()
-	assert.Equal(t, 1, p.collectedCallsigns["dl1abc"])
+	assert.Equal(t, 1, p.collectedCallsigns["DL1ABC"].count)
 }

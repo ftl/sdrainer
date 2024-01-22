@@ -3,14 +3,19 @@ package rx
 import (
 	"fmt"
 	"io"
+	"log"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/ftl/hamradio/callsign"
+	"github.com/ftl/hamradio/dxcc"
+	"github.com/ftl/hamradio/scp"
 )
 
 const (
 	defaultTextWindowSize = 20
-	spottingThreshold     = 2
+	spottingThreshold     = 3
 
 	defaultWriteTimeout = 5 * time.Second
 )
@@ -29,18 +34,38 @@ type SpotIndicatorFunc func(callsign string)
 func (f SpotIndicatorFunc) ShowSpot(callsign string) {
 	f(callsign)
 }
+
 func (f SpotIndicatorFunc) HideSpot(callsign string) {}
+
+type dxccFinder interface {
+	Find(string) ([]dxcc.Prefix, bool)
+}
+
+type scpFinder interface {
+	FindStrings(string) ([]string, error)
+	Find(string) ([]scp.Match, error)
+}
+
+type collectedCallsign struct {
+	call   callsign.Callsign
+	weight int
+	count  int
+}
 
 type TextProcessor struct {
 	out           io.Writer
 	clock         Clock
 	spotIndicator SpotIndicator
 
-	lastWrite time.Time
+	lastWrite     time.Time
+	lastBestMatch callsign.Callsign
 
 	window *textWindow
 
-	collectedCallsigns map[string]int
+	collectedCallsigns map[string]collectedCallsign
+
+	dxccFinder dxccFinder
+	scpFinder  scpFinder
 }
 
 func NewTextProcessor(out io.Writer, clock Clock, spotIndicator SpotIndicator) *TextProcessor {
@@ -50,9 +75,56 @@ func NewTextProcessor(out io.Writer, clock Clock, spotIndicator SpotIndicator) *
 		spotIndicator:      spotIndicator,
 		lastWrite:          clock.Now(),
 		window:             newTextWindow(defaultTextWindowSize),
-		collectedCallsigns: make(map[string]int),
+		collectedCallsigns: make(map[string]collectedCallsign),
 	}
 
+	result.dxccFinder = setupDXCCFinder()
+	result.scpFinder = setupSCPFinder()
+
+	return result
+}
+
+func setupDXCCFinder() *dxcc.Prefixes {
+	localFilename, err := dxcc.LocalFilename()
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+	updated, err := dxcc.Update(dxcc.DefaultURL, localFilename)
+	if err != nil {
+		log.Printf("update of local copy of DXCC prefixes failed: %v", err)
+	}
+	if updated {
+		log.Printf("updated local copy of DXCC prefixes: %v", localFilename)
+	}
+
+	result, err := dxcc.LoadLocal(localFilename)
+	if err != nil {
+		log.Printf("cannot load DXCC prefixes: %v", err)
+		return nil
+	}
+	return result
+}
+
+func setupSCPFinder() *scp.Database {
+	localFilename, err := scp.LocalFilename()
+	if err != nil {
+		log.Print(err)
+		return nil
+	}
+	updated, err := scp.Update(scp.DefaultURL, localFilename)
+	if err != nil {
+		log.Printf("update of local copy of Supercheck database failed: %v", err)
+	}
+	if updated {
+		log.Printf("updated local copy of Supercheck database: %v", localFilename)
+	}
+
+	result, err := scp.LoadLocal(localFilename)
+	if err != nil {
+		log.Printf("cannot load Supercheck database: %v", err)
+		return nil
+	}
 	return result
 }
 
@@ -111,29 +183,90 @@ func (p *TextProcessor) WriteTimeout() {
 
 func (p *TextProcessor) collectCallsign(candidate string) {
 	candidate = strings.ToLower(strings.TrimSpace(candidate))
-	count := p.collectedCallsigns[candidate]
-	// TODO check the DXCC entity and MASTER.SCP if this is a valid match
-	count++
-	p.collectedCallsigns[candidate] = count
+	if isFalsePositive(candidate) {
+		return
+	}
+
+	call, err := callsign.Parse(candidate)
+	if err != nil {
+		return
+	}
+	if !p.isValidDXCC(call) {
+		return
+	}
+
+	collected, found := p.collectedCallsigns[call.String()]
+	if !found {
+		collected = collectedCallsign{
+			call:   call,
+			weight: p.callsignWeight(call),
+		}
+	}
+	collected.count++
+	p.collectedCallsigns[collected.call.String()] = collected
 
 	bestMatch := p.BestMatch()
-	if bestMatch != "" {
-		p.spotIndicator.ShowSpot(bestMatch)
+	if bestMatch == callsign.NoCallsign {
+		return
 	}
+
+	if bestMatch != p.lastBestMatch {
+		p.spotIndicator.HideSpot(p.lastBestMatch.String())
+	}
+	p.spotIndicator.ShowSpot(bestMatch.String())
+	p.lastBestMatch = bestMatch
 }
 
-func (p *TextProcessor) BestMatch() string {
-	bestMatch := ""
+func isFalsePositive(candidate string) bool {
+	var falsePositives = []string{
+		"tu5nn",
+	}
+
+	for _, falsePrefix := range falsePositives {
+		if strings.HasPrefix(candidate, falsePrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *TextProcessor) isValidDXCC(call callsign.Callsign) bool {
+	if p.dxccFinder == nil {
+		return true
+	}
+	_, found := p.dxccFinder.Find(call.String())
+	return found
+}
+
+func (p *TextProcessor) BestMatch() callsign.Callsign {
+	var bestMatch callsign.Callsign
 	maxCount := spottingThreshold - 1
 
-	for callsign, count := range p.collectedCallsigns {
-		if maxCount < count {
-			maxCount = count
-			bestMatch = callsign
+	for _, collected := range p.collectedCallsigns {
+		weightedCount := collected.count + collected.weight
+		if maxCount < weightedCount {
+			maxCount = weightedCount
+			bestMatch = collected.call
 		}
 	}
 
 	return bestMatch
+}
+
+func (p *TextProcessor) callsignWeight(call callsign.Callsign) int {
+	result := 0
+	if p.isSCPCallsign(call) {
+		result++
+	}
+	return result
+}
+
+func (p *TextProcessor) isSCPCallsign(call callsign.Callsign) bool {
+	if p.scpFinder == nil {
+		return false
+	}
+	matches, err := p.scpFinder.FindStrings(call.String())
+	return err == nil && len(matches) == 1
 }
 
 type textWindow struct {
