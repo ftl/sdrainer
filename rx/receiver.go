@@ -57,8 +57,8 @@ func (c *manualClock) Add(d time.Duration) {
 type ReceiverMode string
 
 const (
-	VFOMode  ReceiverMode = "vfo"
-	ScanMode ReceiverMode = "scan"
+	VFOMode    ReceiverMode = "vfo"
+	StrainMode ReceiverMode = "strain"
 )
 
 type ReceiverIndicator[T, F dsp.Number] interface {
@@ -269,7 +269,7 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 			listener.Attach(&peak)
 			r.out.SetActive(listener.ID())
 			r.tracer.Start()
-		case ScanMode:
+		case StrainMode:
 			freq := r.vfoOffset + r.centerFrequency
 			bin := r.frequencyMapping.FrequencyToBin(freq)
 			found := false
@@ -368,7 +368,7 @@ func (r *Receiver[T, F]) run() {
 				signalValue := spectrum[l.SignalBin()]
 				l.Listen(signalValue, noiseFloor+noiseDeviation)
 
-				if r.mode == ScanMode && l.TimeoutExceeded() {
+				if r.mode == StrainMode && l.TimeoutExceeded() {
 					r.peaks.Deactivate(l.Peak()) // beware of temporal coupling!
 					l.Detach()
 					detachedListeners = append(detachedListeners, l)
@@ -382,7 +382,7 @@ func (r *Receiver[T, F]) run() {
 			cumulationCount++
 
 			if cumulationCount == cumulationSize {
-				if r.mode == ScanMode && r.listeners.Available() {
+				if r.mode == StrainMode && r.listeners.Available() {
 					peaks = dsp.FindPeaks(peaks, cumulation, cumulationSize, peakThreshold, r.frequencyMapping)
 
 					for _, p := range peaks {
