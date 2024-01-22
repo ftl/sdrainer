@@ -324,7 +324,13 @@ func (p *TextProcessor) isSCPCallsign(call callsign.Callsign) bool {
 		return false
 	}
 	matches, err := p.scpFinder.FindStrings(call.String())
-	return err == nil && len(matches) == 1
+	if err != nil {
+		return false
+	}
+	if len(matches) == 0 {
+		return false
+	}
+	return call.String() == matches[0]
 }
 
 type textWindow struct {
