@@ -179,6 +179,7 @@ func (p *TextProcessor) sync() {
 func (p *TextProcessor) Restart() {
 	p.Stop()
 	p.lastWrite = p.clock.Now()
+	p.lastBestMatch = callsign.NoCallsign
 	p.window.Reset()
 	clear(p.collectedCallsigns)
 	p.Start()
