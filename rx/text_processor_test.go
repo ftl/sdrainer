@@ -150,6 +150,8 @@ func TestTextWindow_FindNext_IncludeTail(t *testing.T) {
 
 func TestTextProcessor_CollectCallsign(t *testing.T) {
 	p := NewTextProcessor(nil, WallClock, SpotIndicatorFunc(func(string) {}))
+	p.Start()
+	defer p.Stop()
 	receivedText := "cq cq cq de dl1abc dl1abc dl1abc pse k"
 	for _, c := range receivedText {
 		p.Write([]byte(string(c)))
@@ -161,13 +163,16 @@ func TestTextProcessor_CollectCallsign(t *testing.T) {
 
 func TestTextProcessor_WriteTimeout(t *testing.T) {
 	p := NewTextProcessor(nil, WallClock, SpotIndicatorFunc(func(string) {}))
+	p.Start()
+	defer p.Stop()
 	receivedText := "cq de dl1abc"
 	for _, c := range receivedText {
 		p.Write([]byte(string(c)))
 	}
-
+	p.sync()
 	assert.Equal(t, 0, p.collectedCallsigns["DL1ABC"].count)
 
-	p.WriteTimeout()
+	p.op <- p.writeTimeout
+	p.sync()
 	assert.Equal(t, 1, p.collectedCallsigns["DL1ABC"].count)
 }

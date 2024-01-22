@@ -89,7 +89,7 @@ func (l *Listener[T, F]) Attach(peak *dsp.Peak[T, F]) {
 	l.lastAttach = l.clock.Now()
 
 	l.demodulator.Reset()
-	l.textProcessor.Reset()
+	l.textProcessor.Restart()
 
 	l.indicator.ShowDecode(l.id, *peak)
 	// log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
@@ -102,6 +102,7 @@ func (l *Listener[T, F]) Attached() bool {
 func (l *Listener[T, F]) Detach() {
 	l.peak = nil
 
+	l.textProcessor.Stop()
 	l.indicator.HideDecode(l.id)
 	// log.Printf("\ndemodulation stopped\n")
 }

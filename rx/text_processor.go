@@ -60,7 +60,10 @@ type TextProcessor struct {
 	lastWrite     time.Time
 	lastBestMatch callsign.Callsign
 
-	window *textWindow
+	op      chan func()
+	stop    chan struct{}
+	stopped chan struct{}
+	window  *textWindow
 
 	collectedCallsigns map[string]collectedCallsign
 
@@ -70,10 +73,12 @@ type TextProcessor struct {
 
 func NewTextProcessor(out io.Writer, clock Clock, spotIndicator SpotIndicator) *TextProcessor {
 	result := &TextProcessor{
-		out:                out,
-		clock:              clock,
-		spotIndicator:      spotIndicator,
-		lastWrite:          clock.Now(),
+		out:           out,
+		clock:         clock,
+		spotIndicator: spotIndicator,
+		lastWrite:     clock.Now(),
+
+		op:                 make(chan func(), 10),
 		window:             newTextWindow(defaultTextWindowSize),
 		collectedCallsigns: make(map[string]collectedCallsign),
 	}
@@ -128,10 +133,55 @@ func setupSCPFinder() *scp.Database {
 	return result
 }
 
-func (p *TextProcessor) Reset() {
+func (p *TextProcessor) Start() {
+	if p.stop != nil {
+		return
+	}
+	p.stop = make(chan struct{})
+	p.stopped = make(chan struct{})
+	go p.run()
+}
+
+func (p *TextProcessor) Stop() {
+	if p.stop == nil {
+		return
+	}
+	select {
+	case <-p.stop:
+	default:
+		close(p.stop)
+		<-p.stopped
+		p.stop = nil
+		p.stopped = nil
+	}
+}
+
+func (p *TextProcessor) run() {
+	defer close(p.stopped)
+	for {
+		select {
+		case <-p.stop:
+			return
+		case f := <-p.op:
+			f()
+		}
+	}
+}
+
+func (p *TextProcessor) sync() {
+	executed := make(chan struct{})
+	p.op <- func() {
+		close(executed)
+	}
+	<-executed
+}
+
+func (p *TextProcessor) Restart() {
+	p.Stop()
 	p.lastWrite = p.clock.Now()
 	p.window.Reset()
 	clear(p.collectedCallsigns)
+	p.Start()
 }
 
 func (p *TextProcessor) LastWrite() time.Time {
@@ -141,13 +191,31 @@ func (p *TextProcessor) LastWrite() time.Time {
 func (p *TextProcessor) CheckWriteTimeout() {
 	now := p.clock.Now()
 	if now.Sub(p.lastWrite) > defaultWriteTimeout {
-		p.WriteTimeout()
+		p.op <- p.writeTimeout
+	}
+}
+
+func (p *TextProcessor) writeTimeout() {
+	candidate, found := p.window.FindNext(callsignExp, true)
+	if found {
+		p.collectCallsign(candidate)
 	}
 }
 
 func (p *TextProcessor) Write(bytes []byte) (int, error) {
 	p.lastWrite = p.clock.Now()
 
+	p.op <- func() {
+		p.findNextCallsign(bytes)
+	}
+
+	if p.out != nil {
+		return p.out.Write(bytes)
+	}
+	return len(bytes), nil
+}
+
+func (p *TextProcessor) findNextCallsign(bytes []byte) {
 	bytesForWindow := bytes
 	for len(bytesForWindow) > 0 {
 		n, err := p.window.Write(bytesForWindow)
@@ -166,18 +234,6 @@ func (p *TextProcessor) Write(bytes []byte) (int, error) {
 		if p.window.IsFull() {
 			p.window.Shift()
 		}
-	}
-
-	if p.out != nil {
-		return p.out.Write(bytes)
-	}
-	return len(bytes), nil
-}
-
-func (p *TextProcessor) WriteTimeout() {
-	candidate, found := p.window.FindNext(callsignExp, true)
-	if found {
-		p.collectCallsign(candidate)
 	}
 }
 
@@ -205,7 +261,7 @@ func (p *TextProcessor) collectCallsign(candidate string) {
 	collected.count++
 	p.collectedCallsigns[collected.call.String()] = collected
 
-	bestMatch := p.BestMatch()
+	bestMatch := p.bestMatch()
 	if bestMatch == callsign.NoCallsign {
 		return
 	}
@@ -238,7 +294,7 @@ func (p *TextProcessor) isValidDXCC(call callsign.Callsign) bool {
 	return found
 }
 
-func (p *TextProcessor) BestMatch() callsign.Callsign {
+func (p *TextProcessor) bestMatch() callsign.Callsign {
 	var bestMatch callsign.Callsign
 	maxCount := spottingThreshold - 1
 
