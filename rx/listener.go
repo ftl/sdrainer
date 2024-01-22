@@ -20,6 +20,7 @@ type ListenerIndicator[T, F dsp.Number] interface {
 	ShowDecode(receiver string, peak dsp.Peak[T, F])
 	HideDecode(receiver string)
 	ShowSpot(receiver string, callsign string, frequency F)
+	HideSpot(receiver string, callsign string)
 }
 
 type Listener[T, F dsp.Number] struct {
@@ -76,6 +77,11 @@ func (l *Listener[T, F]) SetSignalDebounce(debounce int) {
 func (l *Listener[T, F]) ShowSpot(callsign string) {
 	callsign = strings.ToUpper(callsign)
 	l.indicator.ShowSpot(l.id, callsign, l.peak.SignalFrequency)
+}
+
+func (l *Listener[T, F]) HideSpot(callsign string) {
+	callsign = strings.ToUpper(callsign)
+	l.indicator.HideSpot(l.id, callsign)
 }
 
 func (l *Listener[T, F]) Attach(peak *dsp.Peak[T, F]) {

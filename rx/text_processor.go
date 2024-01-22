@@ -21,6 +21,7 @@ var (
 
 type SpotIndicator interface {
 	ShowSpot(callsign string)
+	HideSpot(callsign string)
 }
 
 type SpotIndicatorFunc func(callsign string)
@@ -28,6 +29,7 @@ type SpotIndicatorFunc func(callsign string)
 func (f SpotIndicatorFunc) ShowSpot(callsign string) {
 	f(callsign)
 }
+func (f SpotIndicatorFunc) HideSpot(callsign string) {}
 
 type TextProcessor struct {
 	out           io.Writer

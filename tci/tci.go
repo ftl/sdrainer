@@ -193,6 +193,16 @@ func (p *Process) showSpot(callsign string, frequency int) {
 	p.client.AddSpot(">"+callsign+"<", tci.ModeCW, frequency, spotColor, "SDRainer")
 }
 
+func (p *Process) HideSpot(_ string, callsign string) {
+	p.doAsync(func() {
+		p.hideSpot(callsign)
+	})
+}
+
+func (p *Process) hideSpot(callsign string) {
+	p.client.DeleteSpot(">" + callsign + "<")
+}
+
 type tciListener struct {
 	process *Process
 	trx     int
