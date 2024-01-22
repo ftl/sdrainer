@@ -205,8 +205,10 @@ func (p *TextProcessor) writeTimeout() {
 func (p *TextProcessor) Write(bytes []byte) (int, error) {
 	p.lastWrite = p.clock.Now()
 
+	bytesForProcessing := make([]byte, len(bytes))
+	copy(bytesForProcessing, bytes)
 	p.op <- func() {
-		p.findNextCallsign(bytes)
+		p.findNextCallsign(bytesForProcessing)
 	}
 
 	if p.out != nil {
