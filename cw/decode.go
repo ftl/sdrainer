@@ -256,7 +256,8 @@ func (d *Decoder) onRisingEdge(offDuration ticks) {
 	d.offThreshold.Put(offDuration, true)
 
 	threshold := d.offThreshold.Get()
-	upperThreshold := 2*d.offThreshold.High() - d.offThreshold.Get()
+	upperThreshold := 4.5 * d.offThreshold.Low()
+	// upperThreshold := 2*d.offThreshold.High() - d.offThreshold.Get()
 	if offDuration >= upperThreshold {
 		// we have a word break
 		d.decodeCurrentChar()
