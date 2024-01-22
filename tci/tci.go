@@ -171,8 +171,9 @@ func (p *Process) ShowDecode(id string, peak dsp.Peak[float32, int]) {
 }
 
 func (p *Process) showDecode(id string, peak dsp.Peak[float32, int]) {
+	// log.Printf("\nShowing listener %s at %.2fkHz\n", id, float64(peak.SignalFrequency)/1000)
 	p.client.DeleteSpot(id)
-	p.client.AddSpot(id, tci.ModeCW, peak.CenterFrequency(), decodeColor, "SDRainer")
+	p.client.AddSpot(id, tci.ModeCW, peak.SignalFrequency, decodeColor, "SDRainer")
 }
 
 func (p *Process) HideDecode(id string) {
@@ -180,6 +181,7 @@ func (p *Process) HideDecode(id string) {
 }
 
 func (p *Process) hideDecode(id string) {
+	// log.Printf("\nHiding listener %s\n", id)
 	p.client.DeleteSpot(id)
 }
 
