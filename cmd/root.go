@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -50,6 +51,8 @@ func init() {
 
 func runWithCtx(f func(ctx context.Context, cmd *cobra.Command, args []string)) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
+		log.Printf("SDRainer Version %s", formatVersion())
+
 		if rootFlags.pprof {
 			go func() {
 				log.Printf("starting pprof on http://localhost:6060/debug/pprof")
@@ -64,6 +67,13 @@ func runWithCtx(f func(ctx context.Context, cmd *cobra.Command, args []string)) 
 
 		f(ctx, cmd, args)
 	}
+}
+
+func formatVersion() string {
+	if gitCommit == "-" && buildTime == "-" {
+		return version
+	}
+	return fmt.Sprintf("%s_%s_%s", version, gitCommit, buildTime)
 }
 
 func handleCancelation(signals <-chan os.Signal, cancel context.CancelFunc) {
