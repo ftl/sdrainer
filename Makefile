@@ -21,4 +21,7 @@ test:
 .PHONY: build
 build:
 	go build -trimpath -buildmode=pie -mod=readonly -modcacherw -v -ldflags "-linkmode external -extldflags \"${LDFLAGS}\" -X github.com/ftl/sdrainer/cmd.version=${VERSION_NUMBER} -X github.com/ftl/sdrainer/cmd.gitCommit=${GITCOMMIT} -X github.com/ftl/sdrainer/cmd.buildTime=${BUILDTIME}" -o ${BINARY_NAME} .
-	
+
+.PHONY: run
+run: build
+	go run .
