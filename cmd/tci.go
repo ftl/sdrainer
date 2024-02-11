@@ -17,6 +17,9 @@ var tciFlags = struct {
 	trx       int
 	threshold int
 
+	showListeners bool
+	showSpots     bool
+
 	traceTCI bool
 }{}
 
@@ -40,7 +43,11 @@ func init() {
 	strainTCICmd.Flags().IntVar(&tciFlags.trx, "trx", 0, "the zero-based index of the TCI trx")
 	strainTCICmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
 
+	strainTCICmd.Flags().BoolVar(&tciFlags.showListeners, "show_listeners", false, "report the listener frequencies as spots over TCI")
+	strainTCICmd.Flags().BoolVar(&tciFlags.showSpots, "show_spots", false, "report the spots over TCI")
 	strainTCICmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
+	strainTCICmd.Flags().MarkHidden("show_listeners")
+	strainTCICmd.Flags().MarkHidden("show_spots")
 	strainTCICmd.Flags().MarkHidden("trace_tci")
 
 	decodeTCICmd.Flags().StringVar(&tciFlags.host, "host", "localhost:40001", "the TCI host and port")
@@ -65,6 +72,7 @@ func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	process.SetSignalDebounce(strainFlags.debounce)
 	process.SetSilenceTimeout(strainFlags.silenceTimeout)
 	process.SetAttachmentTimeout(strainFlags.attachmentTimeout)
+	process.SetShow(tciFlags.showListeners, tciFlags.showSpots)
 
 	tracer, ok := createTracer()
 	if ok {

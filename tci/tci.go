@@ -37,6 +37,8 @@ type Process struct {
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
 	tracer            trace.Tracer
+	showListeners     bool
+	showSpots         bool
 
 	opAsync chan func()
 	close   chan struct{}
@@ -111,6 +113,11 @@ func (p *Process) SetTracer(tracer trace.Tracer) {
 	}
 }
 
+func (p *Process) SetShow(listeners bool, spots bool) {
+	p.showListeners = listeners
+	p.showSpots = spots
+}
+
 func (p *Process) SetThreshold(threshold int) {
 	p.threshold = float32(threshold)
 	if p.client.Connected() {
@@ -177,9 +184,10 @@ func (p *Process) ShowDecode(id string, peak dsp.Peak[float32, int]) {
 }
 
 func (p *Process) showDecode(id string, peak dsp.Peak[float32, int]) {
-	// log.Printf("\nShowing listener %s at %.2fkHz\n", id, float64(peak.SignalFrequency)/1000)
-	p.client.DeleteSpot(id)
-	p.client.AddSpot(id, tci.ModeCW, peak.SignalFrequency, decodeColor, "SDRainer")
+	if p.showListeners {
+		p.client.DeleteSpot(id)
+		p.client.AddSpot(id, tci.ModeCW, peak.SignalFrequency, decodeColor, "SDRainer")
+	}
 }
 
 func (p *Process) HideDecode(id string) {
@@ -187,7 +195,6 @@ func (p *Process) HideDecode(id string) {
 }
 
 func (p *Process) hideDecode(id string) {
-	// log.Printf("\nHiding listener %s\n", id)
 	p.client.DeleteSpot(id)
 }
 
@@ -198,7 +205,9 @@ func (p *Process) ShowSpot(_ string, callsign string, frequency int) {
 }
 
 func (p *Process) showSpot(callsign string, frequency int) {
-	p.client.AddSpot(">"+callsign+"<", tci.ModeCW, frequency, spotColor, "SDRainer")
+	if p.showSpots {
+		p.client.AddSpot(">"+callsign+"<", tci.ModeCW, frequency, spotColor, "SDRainer")
+	}
 	p.spotter.Spot(callsign, float64(frequency), "cw", time.Now().UTC())
 }
 
