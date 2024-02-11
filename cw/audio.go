@@ -208,7 +208,7 @@ func (d *AudioDemodulator) run() {
 				debouncedInt = 1
 			}
 
-			d.tracer.Trace(traceAudio, "%f;%f;%d;%d\n", scale*10, magnitude*10, stateInt*30, debouncedInt*40)
+			d.tracer.Trace(traceAudio, "%f;%f;%d;%d\n", d.filter.MagnitudeThreshold()*50, magnitude*50, stateInt*30, debouncedInt*40)
 
 			d.decoder.Tick(debounced)
 		case <-d.close:
