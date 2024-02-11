@@ -63,6 +63,7 @@ func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	spotter.SetSilencePeriod(strainFlags.spotSilencePeriod)
 
 	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.StrainMode, spotter, tciFlags.traceTCI)
 	if err != nil {

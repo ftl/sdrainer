@@ -1,6 +1,8 @@
 package telnet
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +16,16 @@ const (
 	newConnectionDeadline     = 100 * time.Millisecond
 	connectionKeepAlivePeriod = 30 * time.Second
 	readBufferSize            = 1024
+	defaultSpotSilencePeriod  = 4 * time.Minute
 )
+
+type spotHash string
+
+func newSpotHash(callsign string, frequency float64) spotHash {
+	text := fmt.Sprintf("%s-%.0f", callsign, frequency/1000.0)
+	hash := md5.Sum([]byte(text))
+	return spotHash(hex.EncodeToString(hash[:]))
+}
 
 type Server struct {
 	address  *net.TCPAddr
@@ -24,6 +35,9 @@ type Server struct {
 
 	connections []*Connection
 
+	lastSpots     map[spotHash]time.Time
+	silencePeriod time.Duration
+
 	msg    chan []byte
 	close  chan struct{}
 	closed chan struct{}
@@ -31,11 +45,13 @@ type Server struct {
 
 func NewServer(address string, mycall string, version string) (*Server, error) {
 	result := &Server{
-		mycall:  mycall,
-		version: version,
-		msg:     make(chan []byte, 1),
-		close:   make(chan struct{}),
-		closed:  make(chan struct{}),
+		mycall:        mycall,
+		version:       version,
+		lastSpots:     make(map[spotHash]time.Time),
+		silencePeriod: defaultSpotSilencePeriod,
+		msg:           make(chan []byte, 1),
+		close:         make(chan struct{}),
+		closed:        make(chan struct{}),
 	}
 
 	localAddress, err := net.ResolveTCPAddr("tcp", address)
@@ -132,8 +148,28 @@ func (s *Server) Stop() {
 	}
 }
 
+func (s *Server) SetSilencePeriod(silencePeriod time.Duration) {
+	s.silencePeriod = silencePeriod
+}
+
 func (s *Server) Spot(callsign string, frequency float64, msg string, timestamp time.Time) {
-	s.msg <- []byte(s.formatSpotMessage(callsign, frequency, msg, timestamp))
+	hash := newSpotHash(callsign, frequency)
+	if s.shouldAnnounce(hash, timestamp) {
+		s.msg <- []byte(s.formatSpotMessage(callsign, frequency, msg, timestamp))
+		s.registerSpot(hash, timestamp)
+	}
+}
+
+func (s *Server) shouldAnnounce(hash spotHash, timestamp time.Time) bool {
+	lastSpotTime, ok := s.lastSpots[hash]
+	if !ok {
+		return true
+	}
+	return timestamp.Sub(lastSpotTime) > s.silencePeriod
+}
+
+func (s *Server) registerSpot(hash spotHash, timestamp time.Time) {
+	s.lastSpots[hash] = timestamp
 }
 
 func (s *Server) formatSpotMessage(callsign string, frequency float64, msg string, timestamp time.Time) string {

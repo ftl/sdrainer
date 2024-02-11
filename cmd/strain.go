@@ -11,8 +11,9 @@ var strainFlags = struct {
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
 
-	telnetPort int
-	telnetCall string
+	telnetPort        int
+	telnetCall        string
+	spotSilencePeriod time.Duration
 }{}
 
 var strainCmd = &cobra.Command{
@@ -29,4 +30,5 @@ func init() {
 
 	strainCmd.PersistentFlags().IntVar(&strainFlags.telnetPort, "telnet_port", 7373, "the port of the telnet cluster interface")
 	strainCmd.PersistentFlags().StringVar(&strainFlags.telnetCall, "telnet_call", "local-#", "the reporter callsign of the cluster spots")
+	strainCmd.PersistentFlags().DurationVar(&strainFlags.spotSilencePeriod, "spot_every", 1*time.Minute, "the time period after an active callsign is spotted again")
 }
