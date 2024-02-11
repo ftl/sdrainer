@@ -16,7 +16,7 @@ clean:
 
 .PHONY: test
 test:
-	go test -v -timeout=30s ./...
+	go test -v -timeout=30s -count 1 ./...
 
 .PHONY: build
 build:

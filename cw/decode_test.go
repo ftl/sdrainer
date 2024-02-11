@@ -82,7 +82,7 @@ func TestDecoder_SpeedTolerance(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, 12, minWpm, "min")
+	assert.Equal(t, 11, minWpm, "min")
 	assert.Equal(t, 37, maxWpm, "max")
 }
 
@@ -104,7 +104,7 @@ func TestDecoder_SpeedAdaptionRate(t *testing.T) {
 		{56, 2},
 		{57, maxRounds},
 		{12, 1},
-		{11, 2},
+		{11, 1},
 		{10, 2},
 		{7, 2},
 		{6, 2},

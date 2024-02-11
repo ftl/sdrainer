@@ -156,6 +156,7 @@ func TestTextProcessor_CollectCallsign(t *testing.T) {
 	for _, c := range receivedText {
 		p.Write([]byte(string(c)))
 	}
+	p.sync()
 
 	t.Logf("collected callsigns %v", p.collectedCallsigns)
 	assert.Equal(t, 3, p.collectedCallsigns["DL1ABC"].count)
