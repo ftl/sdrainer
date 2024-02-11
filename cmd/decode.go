@@ -14,5 +14,5 @@ var decodeCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(decodeCmd)
 
-	decodeCmd.Flags().IntVar(&decodeFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal detection")
+	decodeCmd.PersistentFlags().IntVar(&decodeFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal detection")
 }
