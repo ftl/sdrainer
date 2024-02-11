@@ -57,7 +57,7 @@ func (c *manualClock) Add(d time.Duration) {
 type ReceiverMode string
 
 const (
-	VFOMode    ReceiverMode = "vfo"
+	DecodeMode ReceiverMode = "decode"
 	StrainMode ReceiverMode = "strain"
 )
 
@@ -116,7 +116,7 @@ func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock, ind
 	}
 
 	listenerPoolSize := defaultListenerPoolSize
-	if mode == VFOMode {
+	if mode == DecodeMode {
 		listenerPoolSize = 1
 	}
 	result.listeners = NewListenerPool[T, F](listenerPoolSize, result.id, result.newListener)
@@ -250,7 +250,7 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 		}
 
 		switch r.mode {
-		case VFOMode:
+		case DecodeMode:
 			if !r.listeners.Available() {
 				r.listeners.Reset()
 			}
@@ -404,7 +404,7 @@ func (r *Receiver[T, F]) run() {
 					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", peakThreshold)
 
 					signalBin := -1
-					if r.mode == VFOMode {
+					if r.mode == DecodeMode {
 						r.listeners.ForEach(func(l *Listener[T, F]) {
 							signalBin = l.Peak().SignalBin
 						})

@@ -15,7 +15,6 @@ var pulseFlags = struct {
 	pitch  int
 
 	scale              float64
-	debounceThreshold  int
 	magnitudeThreshold float64
 	wpm                int
 }{}
@@ -27,13 +26,12 @@ var pulseCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(pulseCmd)
+	decodeCmd.AddCommand(pulseCmd)
 
 	pulseCmd.Flags().StringVar(&pulseFlags.source, "source", "", "Pulseaudio source ID to use")
 	pulseCmd.Flags().IntVar(&pulseFlags.pitch, "pitch", 700, "pitch in Hz")
 
 	pulseCmd.Flags().Float64Var(&pulseFlags.scale, "scale", 0, "scale the audio signal (0 = autoscale, 1 = no scaling)")
-	pulseCmd.Flags().IntVar(&pulseFlags.debounceThreshold, "debounce", 2, "debounce threshold for the signal detector")
 	pulseCmd.Flags().Float64Var(&pulseFlags.magnitudeThreshold, "magnitude", 0.75, "magnitude threshold for the signal detector")
 	pulseCmd.Flags().IntVar(&pulseFlags.wpm, "wpm", 20, "preset speed in WpM")
 }
@@ -58,7 +56,7 @@ func runPulse(ctx context.Context, cmd *cobra.Command, args []string) {
 	demodulator := cw.NewAudioDemodulator(os.Stdout, float64(pulseFlags.pitch), source.SampleRate(), 0)
 	defer demodulator.Close()
 	demodulator.SetScale(pulseFlags.scale)
-	demodulator.SetDebounceThreshold(pulseFlags.debounceThreshold)
+	demodulator.SetDebounceThreshold(decodeFlags.debounce)
 	demodulator.SetMagnitudeThreshold(pulseFlags.magnitudeThreshold)
 
 	tracer, ok := createTracer()

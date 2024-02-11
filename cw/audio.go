@@ -47,6 +47,7 @@ func NewAudioDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSiz
 		op:           make(chan func()),
 		close:        make(chan struct{}),
 		closed:       make(chan struct{}),
+		tracer:       new(trace.NoTracer),
 	}
 	result.decoder = NewDecoder(out, sampleRate, result.filter.Blocksize())
 

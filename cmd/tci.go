@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,58 +13,58 @@ import (
 )
 
 var tciFlags = struct {
-	host              string
-	trx               int
-	mode              string
-	threshold         int
-	debounce          int
-	silenceTimeout    time.Duration
-	attachmentTimeout time.Duration
-
-	telnetPort int
-	telnetCall string
+	host      string
+	trx       int
+	threshold int
 
 	traceTCI bool
 }{}
 
-var tciCmd = &cobra.Command{
+var strainTCICmd = &cobra.Command{
 	Use:   "tci",
-	Short: "decode CW from a TCI IQ stream",
-	Run:   runWithCtx(runTCI),
+	Short: "detect and decode CW signals from a TCI IQ stream",
+	Run:   runWithCtx(runStrainTCI),
+}
+
+var decodeTCICmd = &cobra.Command{
+	Use:   "tci",
+	Short: "decode a CW signal at the current VFO A frequency of a TCI IQ stream",
+	Run:   runWithCtx(runDecodeTCI),
 }
 
 func init() {
-	rootCmd.AddCommand(tciCmd)
+	strainCmd.AddCommand(strainTCICmd)
+	decodeCmd.AddCommand(decodeTCICmd)
 
-	tciCmd.Flags().StringVar(&tciFlags.host, "host", "localhost:40001", "the TCI host and port")
-	tciCmd.Flags().IntVar(&tciFlags.trx, "trx", 0, "the zero-based index of the TCI trx")
-	tciCmd.Flags().StringVar(&tciFlags.mode, "mode", "vfo", "vfo: decode at the frequency of VFO A, strain: decode all available signals and find callsigns")
-	tciCmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
-	tciCmd.Flags().IntVar(&tciFlags.debounce, "debounce", 1, "the debounce threshold for the CW signal detection")
-	tciCmd.Flags().DurationVar(&tciFlags.silenceTimeout, "silence", 10*time.Second, "the time of silence until the next random peak is selected")
-	tciCmd.Flags().DurationVar(&tciFlags.attachmentTimeout, "busy", 1*time.Minute, "the time of decoding a busy signal until the next random peak is selected")
+	strainTCICmd.Flags().StringVar(&tciFlags.host, "host", "localhost:40001", "the TCI host and port")
+	strainTCICmd.Flags().IntVar(&tciFlags.trx, "trx", 0, "the zero-based index of the TCI trx")
+	strainTCICmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
 
-	tciCmd.Flags().IntVar(&tciFlags.telnetPort, "telnet_port", 7373, "the port of the telnet cluster interface")
-	tciCmd.Flags().StringVar(&tciFlags.telnetCall, "telnet_call", "local-#", "the reporter callsign of the cluster spots")
+	strainTCICmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
+	strainTCICmd.Flags().MarkHidden("trace_tci")
 
-	tciCmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
-	tciCmd.Flags().MarkHidden("trace_tci")
+	decodeTCICmd.Flags().StringVar(&tciFlags.host, "host", "localhost:40001", "the TCI host and port")
+	decodeTCICmd.Flags().IntVar(&tciFlags.trx, "trx", 0, "the zero-based index of the TCI trx")
+	decodeTCICmd.Flags().IntVar(&tciFlags.threshold, "threshold", 15, "the threshold in dB over noise that a signal must exceed to be detected")
+
+	decodeTCICmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
+	decodeTCICmd.Flags().MarkHidden("trace_tci")
 }
 
-func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
-	spotter, err := telnet.NewServer(fmt.Sprintf(":%d", tciFlags.telnetPort), tciFlags.telnetCall, formatVersion())
+func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
+	spotter, err := telnet.NewServer(fmt.Sprintf(":%d", strainFlags.telnetPort), strainFlags.telnetCall, formatVersion())
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.ReceiverMode(strings.ToLower(tciFlags.mode)), spotter, tciFlags.traceTCI)
+	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.StrainMode, spotter, tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}
 	process.SetThreshold(tciFlags.threshold)
-	process.SetSilenceTimeout(tciFlags.silenceTimeout)
-	process.SetAttachmentTimeout(tciFlags.attachmentTimeout)
-	process.SetSignalDebounce(tciFlags.debounce)
+	process.SetSignalDebounce(strainFlags.debounce)
+	process.SetSilenceTimeout(strainFlags.silenceTimeout)
+	process.SetAttachmentTimeout(strainFlags.attachmentTimeout)
 
 	tracer, ok := createTracer()
 	if ok {
@@ -77,4 +75,22 @@ func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	<-ctx.Done()
 	process.Close()
 	spotter.Stop()
+}
+
+func runDecodeTCI(ctx context.Context, cmd *cobra.Command, args []string) {
+	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.DecodeMode, nil, tciFlags.traceTCI)
+	if err != nil {
+		log.Fatal(err)
+	}
+	process.SetThreshold(tciFlags.threshold)
+	process.SetSignalDebounce(decodeFlags.debounce)
+
+	tracer, ok := createTracer()
+	if ok {
+		log.Printf("set tracer %#v", tracer)
+		process.SetTracer(tracer)
+	}
+
+	<-ctx.Done()
+	process.Close()
 }
