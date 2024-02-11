@@ -21,11 +21,16 @@ const (
 	partCount       = 4
 )
 
+type Spotter interface {
+	Spot(callsign string, frequency float64, msg string, timestamp time.Time)
+}
+
 type Process struct {
 	client   *tci.Client
 	listener *tciListener
 	trx      int
 	receiver *rx.Receiver[float32, int]
+	spotter  Spotter
 
 	threshold         float32
 	signalDebounce    int
@@ -38,7 +43,7 @@ type Process struct {
 	closed  chan struct{}
 }
 
-func New(host string, trx int, mode rx.ReceiverMode, traceTCI bool) (*Process, error) {
+func New(host string, trx int, mode rx.ReceiverMode, spotter Spotter, traceTCI bool) (*Process, error) {
 	tcpHost, err := parseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)
@@ -52,6 +57,7 @@ func New(host string, trx int, mode rx.ReceiverMode, traceTCI bool) (*Process, e
 	result := &Process{
 		client:  client,
 		trx:     trx,
+		spotter: spotter,
 		opAsync: make(chan func(), 100),
 		close:   make(chan struct{}),
 		closed:  make(chan struct{}),
@@ -193,6 +199,7 @@ func (p *Process) ShowSpot(_ string, callsign string, frequency int) {
 
 func (p *Process) showSpot(callsign string, frequency int) {
 	p.client.AddSpot(">"+callsign+"<", tci.ModeCW, frequency, spotColor, "SDRainer")
+	p.spotter.Spot(callsign, float64(frequency), "cw", time.Now().UTC())
 }
 
 func (p *Process) HideSpot(_ string, callsign string) {

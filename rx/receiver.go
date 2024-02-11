@@ -125,7 +125,6 @@ func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock, ind
 }
 
 func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
-	// TODO handle the output properly instead of hardcoding os.Stdout
 	result := NewListener[T, F](id, r.out.Channel(id), r.clock, r.indicator, r.sampleRate, r.blockSize)
 	result.SetAttachmentTimeout(r.attachmentTimeout)
 	result.SetSilenceTimeout(r.silenceTimeout)

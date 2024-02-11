@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/ftl/sdrainer/rx"
 	"github.com/ftl/sdrainer/tci"
+	"github.com/ftl/sdrainer/telnet"
 )
 
 var tciFlags = struct {
@@ -20,6 +22,9 @@ var tciFlags = struct {
 	debounce          int
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
+
+	telnetPort int
+	telnetCall string
 
 	traceTCI bool
 }{}
@@ -41,12 +46,20 @@ func init() {
 	tciCmd.Flags().DurationVar(&tciFlags.silenceTimeout, "silence", 10*time.Second, "the time of silence until the next random peak is selected")
 	tciCmd.Flags().DurationVar(&tciFlags.attachmentTimeout, "busy", 1*time.Minute, "the time of decoding a busy signal until the next random peak is selected")
 
+	tciCmd.Flags().IntVar(&tciFlags.telnetPort, "telnet_port", 7373, "the port of the telnet cluster interface")
+	tciCmd.Flags().StringVar(&tciFlags.telnetCall, "telnet_call", "local-#", "the reporter callsign of the cluster spots")
+
 	tciCmd.Flags().BoolVar(&tciFlags.traceTCI, "trace_tci", false, "trace the TCI communication on the console")
 	tciCmd.Flags().MarkHidden("trace_tci")
 }
 
 func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
-	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.ReceiverMode(strings.ToLower(tciFlags.mode)), tciFlags.traceTCI)
+	spotter, err := telnet.NewServer(fmt.Sprintf(":%d", tciFlags.telnetPort), tciFlags.telnetCall, formatVersion())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.ReceiverMode(strings.ToLower(tciFlags.mode)), spotter, tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -63,4 +76,5 @@ func runTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 
 	<-ctx.Done()
 	process.Close()
+	spotter.Stop()
 }
