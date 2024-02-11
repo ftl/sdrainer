@@ -55,11 +55,19 @@ func runPulse(ctx context.Context, cmd *cobra.Command, args []string) {
 		log.Fatal(err)
 	}
 
-	demodulator := cw.NewAudioDemodulator(os.Stdout, 700, source.SampleRate(), 0)
+	demodulator := cw.NewAudioDemodulator(os.Stdout, float64(pulseFlags.pitch), source.SampleRate(), 0)
 	defer demodulator.Close()
 	demodulator.SetScale(pulseFlags.scale)
 	demodulator.SetDebounceThreshold(pulseFlags.debounceThreshold)
 	demodulator.SetMagnitudeThreshold(pulseFlags.magnitudeThreshold)
+
+	tracer, ok := createTracer()
+	if ok {
+		log.Printf("set tracer %#v", tracer)
+		demodulator.SetTracer(tracer)
+		tracer.Start()
+		defer tracer.Stop()
+	}
 
 	stream, err := client.NewRecord(pulse.Float32Writer(demodulator.Write), pulse.RecordBufferFragmentSize(2*uint32(demodulator.Blocksize())))
 	if err != nil {

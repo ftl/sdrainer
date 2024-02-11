@@ -6,9 +6,12 @@ import (
 	"math"
 
 	"github.com/ftl/sdrainer/dsp"
+	"github.com/ftl/sdrainer/trace"
 )
 
 const (
+	traceAudio = "audio"
+
 	defaultBufferSize        = 1024 * 1024 // 1k
 	defaultDebounceThreshold = 3
 	defaultMaxScale          = 12
@@ -26,6 +29,8 @@ type AudioDemodulator struct {
 	op     chan func()
 	close  chan struct{}
 	closed chan struct{}
+
+	tracer Tracer
 }
 
 func NewAudioDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int) *AudioDemodulator {
@@ -58,6 +63,13 @@ func (d *AudioDemodulator) Close() {
 		close(d.close)
 		<-d.closed
 	}
+}
+
+func (d *AudioDemodulator) SetTracer(tracer trace.Tracer) {
+	d.do(func() {
+		d.tracer = tracer
+		d.decoder.SetTracer(tracer)
+	})
 }
 
 func (d *AudioDemodulator) SetMaxScale(scale float64) {
@@ -157,23 +169,11 @@ func (d *AudioDemodulator) run() {
 	blocksize := d.filter.Blocksize()
 	block := make(dsp.FilterBlock, 0)
 
-	// f, err := os.Create("frame.csv")
-	// if err != nil {
-	// 	log.Printf("cannot open stream file: %v", err)
-	// 	return
-	// }
-	// defer f.Close()
-
 	for {
 		select {
 		case op := <-d.op:
 			op()
 		case sample := <-d.in:
-			// _, err := fmt.Fprintf(f, "%f\n", sample)
-			// if err != nil {
-			// 	log.Printf("cannot write stream file: %v", err)
-			// }
-
 			block = append(block, sample)
 			if len(block) < blocksize {
 				continue
@@ -190,39 +190,25 @@ func (d *AudioDemodulator) run() {
 				}
 			}
 
-			// for _, smpl := range block {
-			// 	_, err := fmt.Fprintf(f, "%f\n", smpl)
-			// 	if err != nil {
-			// 		log.Printf("cannot write stream file: %v", err)
-			// 	}
-			// }
-
 			magnitude, state, _, err := d.filter.Detect(block)
 			if err != nil {
 				log.Printf("cannot detect signal: %v", err)
 				continue
 			}
-			_ = magnitude
+			block = block[:0]
 
 			stateInt := 0
-			_ = stateInt
 			if state {
 				stateInt = 1
 			}
 
-			block = block[:0]
-
 			debounced := d.debouncer.Debounce(state)
-			_ = debounced
 			debouncedInt := 0
-			_ = debouncedInt
 			if debounced {
 				debouncedInt = 1
 			}
-			// _, err := fmt.Fprintf(f, "%f;%d;%d\n", magnitude, stateInt, debouncedInt)
-			// if err != nil {
-			// 	log.Printf("cannot write stream file: %v", err)
-			// }
+
+			d.tracer.Trace(traceAudio, "%f;%f;%d;%d\n", scale*10, magnitude*10, stateInt*30, debouncedInt*40)
 
 			d.decoder.Tick(debounced)
 		case <-d.close:
