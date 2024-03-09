@@ -149,7 +149,13 @@ func (p *Process) onConnected(connected bool) {
 		return
 	}
 
-	p.receiver.Start(48000, 2048/partCount)
+	bandwidth := -p.client.MinIFFrequency + p.client.MaxIFFrequency
+	sampleRate := 48000
+	blockSize := 2048 / partCount
+	edgeWidth := int((float32(sampleRate-bandwidth) / 2.0) * (float32(blockSize) / float32(sampleRate)))
+	p.receiver.SetEdgeWidth(edgeWidth)
+
+	p.receiver.Start(sampleRate, blockSize)
 	if p.threshold != 0 {
 		p.receiver.SetPeakThreshold(p.threshold)
 	}
@@ -206,7 +212,9 @@ func (p *Process) showSpot(callsign string, frequency int) {
 	if p.showSpots {
 		p.client.AddSpot(">"+callsign+"<", tci.ModeCW, frequency, spotColor, "SDRainer")
 	}
-	p.spotter.Spot(callsign, float64(frequency), "cw", time.Now().UTC())
+	if p.spotter != nil {
+		p.spotter.Spot(callsign, float64(frequency), "cw", time.Now().UTC())
+	}
 }
 
 func (p *Process) HideSpot(_ string, callsign string) {
