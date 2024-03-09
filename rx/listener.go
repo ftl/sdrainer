@@ -263,3 +263,10 @@ func (p *ListenerPool[T, F]) ForEach(f func(listener *Listener[T, F])) {
 		f(l)
 	}
 }
+
+func (p *ListenerPool[T, F]) First() (*Listener[T, F], bool) {
+	if len(p.listeners) == 0 {
+		return nil, false
+	}
+	return p.listeners[0], true
+}
