@@ -290,12 +290,12 @@ func (r *Receiver[T, F]) IQData(sampleRate int, data []T) {
 	if r.in == nil {
 		return
 	}
-	if r.sampleRate != int(sampleRate) {
-		log.Printf("wrong incoming sample rate on receiver %s: %d!", r.id, sampleRate)
+	if r.sampleRate != sampleRate {
+		log.Printf("wrong incoming sample rate on receiver %s: %d instead of %d!", r.id, sampleRate, r.sampleRate)
 		return
 	}
 	if r.blockSize != len(data)/2 {
-		log.Printf("wrong incoming block size on receiver %s: %d", r.id, len(data))
+		log.Printf("wrong incoming block size on receiver %s: %d instead of %d", r.id, len(data), r.blockSize)
 		return
 	}
 
@@ -404,10 +404,16 @@ func (r *Receiver[T, F]) run() {
 					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", peakThreshold)
 
 					signalBin := -1
-					if r.mode == DecodeMode {
+					switch r.mode {
+					case DecodeMode:
 						r.listeners.ForEach(func(l *Listener[T, F]) {
 							signalBin = l.Peak().SignalBin
 						})
+					case StrainMode:
+						listener, ok := r.listeners.First()
+						if ok {
+							signalBin = listener.Peak().SignalBin
+						}
 					}
 					r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", signalBin)
 				}
