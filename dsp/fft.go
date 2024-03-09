@@ -213,7 +213,7 @@ func (p Peak[T, F]) ContainsBin(bin int) bool {
 }
 
 func FindNoiseFloor[T Number](psd Block[T], edgeWidth int) (T, float64) {
-	windowSize := len(psd) / 10
+	windowSize := (len(psd) - 2*edgeWidth) / 10
 	minValue := float64(psd[0])
 	var sum float64
 	count := 0
