@@ -24,6 +24,7 @@ var (
 
 var rootFlags = struct {
 	pprof            bool
+	debug            bool
 	traceContext     string
 	traceDestination string
 }{}
@@ -41,6 +42,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&rootFlags.pprof, "pprof", false, "enable pprof")
+	rootCmd.PersistentFlags().BoolVar(&rootFlags.debug, "debug", false, "enable debug logging")
 	rootCmd.PersistentFlags().StringVar(&rootFlags.traceContext, "trace", "", "spectrum | demod | decode")
 	rootCmd.PersistentFlags().StringVar(&rootFlags.traceDestination, "trace_to", "", "file:<filename> | udp:<host:port>")
 
@@ -51,6 +53,10 @@ func init() {
 
 func runWithCtx(f func(ctx context.Context, cmd *cobra.Command, args []string)) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
+		if !rootFlags.debug {
+			log.SetOutput(&nopWriter{})
+		}
+
 		log.Printf("SDRainer Version %s", formatVersion())
 
 		if rootFlags.pprof {
@@ -110,3 +116,7 @@ func createTracer() (trace.Tracer, bool) {
 		return nil, false
 	}
 }
+
+type nopWriter struct{}
+
+func (w *nopWriter) Write(p []byte) (n int, err error) { return len(p), nil }
