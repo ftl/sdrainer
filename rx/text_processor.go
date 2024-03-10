@@ -24,18 +24,20 @@ var (
 	callsignExp = regexp.MustCompile(`\s(?:([a-z0-9]+)/)?(([a-z]|[a-z][a-z]|[0-9][a-z]|[0-9][a-z][a-z])[0-9][a-z0-9]*[a-z])(?:/([a-z0-9]+))?(?:/(p|a|m|mm|am))?`)
 )
 
-type SpotIndicator interface {
-	ShowSpot(callsign string)
-	HideSpot(callsign string)
+type CallsignReporter interface {
+	CallsignDecoded(callsign string, count int, weight int)
+	CallsignSpotted(callsign string)
+	SpotTimeout(callsign string)
 }
 
-type SpotIndicatorFunc func(callsign string)
+type SpotReporterFunc func(callsign string)
 
-func (f SpotIndicatorFunc) ShowSpot(callsign string) {
+func (f SpotReporterFunc) CallsignSpotted(callsign string) {
 	f(callsign)
 }
 
-func (f SpotIndicatorFunc) HideSpot(callsign string) {}
+func (f SpotReporterFunc) CallsignDecoded(callsign string, count int, weight int) {}
+func (f SpotReporterFunc) SpotTimeout(callsign string)                            {}
 
 type dxccFinder interface {
 	Find(string) ([]dxcc.Prefix, bool)
@@ -53,9 +55,9 @@ type collectedCallsign struct {
 }
 
 type TextProcessor struct {
-	out           io.Writer
-	clock         Clock
-	spotIndicator SpotIndicator
+	out      io.Writer
+	clock    Clock
+	reporter CallsignReporter
 
 	lastWrite     time.Time
 	lastBestMatch callsign.Callsign
@@ -71,12 +73,12 @@ type TextProcessor struct {
 	scpFinder  scpFinder
 }
 
-func NewTextProcessor(out io.Writer, clock Clock, spotIndicator SpotIndicator) *TextProcessor {
+func NewTextProcessor(out io.Writer, clock Clock, reporter CallsignReporter) *TextProcessor {
 	result := &TextProcessor{
-		out:           out,
-		clock:         clock,
-		spotIndicator: spotIndicator,
-		lastWrite:     clock.Now(),
+		out:       out,
+		clock:     clock,
+		reporter:  reporter,
+		lastWrite: clock.Now(),
 
 		op:                 make(chan func(), 10),
 		window:             newTextWindow(defaultTextWindowSize),
@@ -263,16 +265,17 @@ func (p *TextProcessor) collectCallsign(candidate string) {
 	}
 	collected.count++
 	p.collectedCallsigns[collected.call.String()] = collected
+	p.reporter.CallsignDecoded(collected.call.String(), collected.count, collected.weight)
 
 	bestMatch := p.bestMatch()
 	if bestMatch == callsign.NoCallsign {
 		return
 	}
 
-	if bestMatch != p.lastBestMatch {
-		p.spotIndicator.HideSpot(p.lastBestMatch.String())
+	if bestMatch != p.lastBestMatch && p.lastBestMatch != callsign.NoCallsign {
+		p.reporter.SpotTimeout(p.lastBestMatch.String())
 	}
-	p.spotIndicator.ShowSpot(bestMatch.String())
+	p.reporter.CallsignSpotted(bestMatch.String())
 	p.lastBestMatch = bestMatch
 }
 

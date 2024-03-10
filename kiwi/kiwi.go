@@ -5,7 +5,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/ftl/sdrainer/dsp"
 	"github.com/ftl/sdrainer/rx"
 	"github.com/ftl/sdrainer/trace"
 )
@@ -42,7 +41,7 @@ func New(host string, username string, password string, centerFrequency float64,
 		rxFrequency:     centerFrequency,
 		close:           make(chan struct{}),
 	}
-	result.receiver = rx.NewReceiver("", rx.StrainMode, rx.WallClock, result)
+	result.receiver = rx.NewReceiver[float32, int]("", rx.StrainMode, rx.WallClock)
 
 	edgeWidth := int(float32((maxBandwidth-bandwidth)/2) * (float32(blockSize) / float32(maxBandwidth)))
 	result.receiver.SetEdgeWidth(edgeWidth)
@@ -142,9 +141,9 @@ func (p *Process) SetSignalDebounce(debounce int) {
 	p.receiver.SetSignalDebounce(debounce)
 }
 
-func (p *Process) ShowDecode(receiver string, peak dsp.Peak[float32, int]) {}
-func (p *Process) HideDecode(receiver string)                              {}
-func (p *Process) ShowSpot(receiver string, callsign string, frequency int) {
-	log.Printf("SPOT: %s at %.2fkHz", callsign, float32(frequency)/1000)
+func (p *Process) ListenerActivated(listener string, frequency int)   {}
+func (p *Process) ListenerDeactivated(listener string, frequency int) {}
+func (p *Process) CallsignDecoded(listener string, callsign string, frequency int, count int, weight int) {
 }
-func (p *Process) HideSpot(receiver string, callsign string) {}
+func (p *Process) CallsignSpotted(listener string, callsign string, frequency int) {}
+func (p *Process) SpotTimeout(listener string, callsign string, frequency int)     {}

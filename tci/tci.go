@@ -7,7 +7,6 @@ import (
 	tci "github.com/ftl/tci/client"
 
 	"github.com/ftl/sdrainer/cli"
-	"github.com/ftl/sdrainer/dsp"
 	"github.com/ftl/sdrainer/rx"
 	"github.com/ftl/sdrainer/trace"
 )
@@ -43,7 +42,7 @@ type Process struct {
 	closed  chan struct{}
 }
 
-func New(host string, trx int, mode rx.ReceiverMode, spotter Spotter, traceTCI bool) (*Process, error) {
+func New(host string, trx int, mode rx.ReceiverMode, spotter Spotter, reporter rx.Reporter[int], traceTCI bool) (*Process, error) {
 	tcpHost, err := cli.ParseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)
@@ -63,9 +62,13 @@ func New(host string, trx int, mode rx.ReceiverMode, spotter Spotter, traceTCI b
 		closed:  make(chan struct{}),
 	}
 	result.listener = &tciListener{process: result, trx: result.trx}
-	result.receiver = rx.NewReceiver[float32, int]("", mode, rx.WallClock, result)
-	go result.run()
+	result.receiver = rx.NewReceiver[float32, int]("", mode, rx.WallClock)
+	result.receiver.AddReporter(result)
+	if reporter != nil {
+		result.receiver.AddReporter(reporter)
+	}
 
+	go result.run()
 	client.Notify(result.listener)
 
 	return result, nil
@@ -181,20 +184,20 @@ var (
 	spotColor   tci.ARGB = tci.NewARGB(255, 255, 255, 0)
 )
 
-func (p *Process) ShowDecode(id string, peak dsp.Peak[float32, int]) {
+func (p *Process) ListenerActivated(id string, frequency int) {
 	p.doAsync(func() {
-		p.showDecode(id, peak)
+		p.showDecode(id, frequency)
 	})
 }
 
-func (p *Process) showDecode(id string, peak dsp.Peak[float32, int]) {
+func (p *Process) showDecode(id string, frequency int) {
 	if p.showListeners {
 		p.client.DeleteSpot(id)
-		p.client.AddSpot(id, tci.ModeCW, peak.SignalFrequency, decodeColor, "SDRainer")
+		p.client.AddSpot(id, tci.ModeCW, frequency, decodeColor, "SDRainer")
 	}
 }
 
-func (p *Process) HideDecode(id string) {
+func (p *Process) ListenerDeactivated(id string, _ int) {
 	p.doAsync(func() { p.hideDecode(id) })
 }
 
@@ -202,7 +205,11 @@ func (p *Process) hideDecode(id string) {
 	p.client.DeleteSpot(id)
 }
 
-func (p *Process) ShowSpot(_ string, callsign string, frequency int) {
+func (p *Process) CallsignDecoded(listener string, callsign string, frequency int, count int, weight int) {
+	// ignore
+}
+
+func (p *Process) CallsignSpotted(_ string, callsign string, frequency int) {
 	p.doAsync(func() {
 		p.showSpot(callsign, frequency)
 	})
@@ -217,7 +224,7 @@ func (p *Process) showSpot(callsign string, frequency int) {
 	}
 }
 
-func (p *Process) HideSpot(_ string, callsign string) {
+func (p *Process) SpotTimeout(_ string, callsign string, _ int) {
 	p.doAsync(func() {
 		p.hideSpot(callsign)
 	})

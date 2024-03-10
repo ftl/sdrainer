@@ -61,15 +61,11 @@ const (
 	StrainMode ReceiverMode = "strain"
 )
 
-type ReceiverIndicator[T, F dsp.Number] interface {
-	ListenerIndicator[T, F]
-}
-
 type Receiver[T, F dsp.Number] struct {
 	id        string
 	mode      ReceiverMode
 	clock     Clock
-	indicator ReceiverIndicator[T, F]
+	reporters []Reporter[F]
 
 	peakThreshold   T
 	edgeWidth       int
@@ -94,15 +90,14 @@ type Receiver[T, F dsp.Number] struct {
 	tracer trace.Tracer
 }
 
-func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock, indicator ReceiverIndicator[T, F]) *Receiver[T, F] {
+func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock) *Receiver[T, F] {
 	if clock == nil {
 		clock = WallClock
 	}
 	result := &Receiver[T, F]{
-		clock:     clock,
-		id:        id,
-		indicator: indicator,
-		mode:      mode,
+		id:    id,
+		mode:  mode,
+		clock: clock,
 
 		peakThreshold:     defaultPeakThreshold,
 		edgeWidth:         defaultEdgeWidth,
@@ -125,7 +120,7 @@ func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock, ind
 }
 
 func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
-	result := NewListener[T, F](id, r.out.Channel(id), r.clock, r.indicator, r.sampleRate, r.blockSize)
+	result := NewListener[T, F](id, r.out.Channel(id), r.clock, r, r.sampleRate, r.blockSize)
 	result.SetAttachmentTimeout(r.attachmentTimeout)
 	result.SetSilenceTimeout(r.silenceTimeout)
 	result.SetTracer(r.tracer)
@@ -175,6 +170,40 @@ func (r *Receiver[T, F]) do(f func()) {
 		f()
 	} else {
 		r.op <- f
+	}
+}
+
+func (r *Receiver[T, F]) AddReporter(reporter Reporter[F]) {
+	r.reporters = append(r.reporters, reporter)
+}
+
+func (r *Receiver[T, F]) ListenerActivated(listener string, frequency F) {
+	for _, reporter := range r.reporters {
+		reporter.ListenerActivated(listener, frequency)
+	}
+}
+
+func (r *Receiver[T, F]) ListenerDeactivated(listener string, frequency F) {
+	for _, reporter := range r.reporters {
+		reporter.ListenerDeactivated(listener, frequency)
+	}
+}
+
+func (r *Receiver[T, F]) CallsignDecoded(listener string, callsign string, frequency F, count int, weight int) {
+	for _, reporter := range r.reporters {
+		reporter.CallsignDecoded(listener, callsign, frequency, count, weight)
+	}
+}
+
+func (r *Receiver[T, F]) CallsignSpotted(listener string, callsign string, frequency F) {
+	for _, reporter := range r.reporters {
+		reporter.CallsignSpotted(listener, callsign, frequency)
+	}
+}
+
+func (r *Receiver[T, F]) SpotTimeout(listener string, callsign string, frequency F) {
+	for _, reporter := range r.reporters {
+		reporter.SpotTimeout(listener, callsign, frequency)
 	}
 }
 

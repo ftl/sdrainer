@@ -16,17 +16,10 @@ const (
 	defaultAttachmentTimeout = 2 * time.Minute
 )
 
-type ListenerIndicator[T, F dsp.Number] interface {
-	ShowDecode(receiver string, peak dsp.Peak[T, F])
-	HideDecode(receiver string)
-	ShowSpot(receiver string, callsign string, frequency F)
-	HideSpot(receiver string, callsign string)
-}
-
 type Listener[T, F dsp.Number] struct {
-	id        string
-	clock     Clock
-	indicator ListenerIndicator[T, F]
+	id       string
+	clock    Clock
+	reporter Reporter[F]
 
 	demodulator   *cw.SpectralDemodulator[T, F]
 	textProcessor *TextProcessor
@@ -38,11 +31,11 @@ type Listener[T, F dsp.Number] struct {
 	attachmentTimeout time.Duration
 }
 
-func NewListener[T, F dsp.Number](id string, out io.Writer, clock Clock, indicator ListenerIndicator[T, F], sampleRate int, blockSize int) *Listener[T, F] {
+func NewListener[T, F dsp.Number](id string, out io.Writer, clock Clock, reporter Reporter[F], sampleRate int, blockSize int) *Listener[T, F] {
 	result := &Listener[T, F]{
-		id:        id,
-		clock:     clock,
-		indicator: indicator,
+		id:       id,
+		clock:    clock,
+		reporter: reporter,
 
 		silenceTimeout:    defaultSilenceTimeout,
 		attachmentTimeout: defaultAttachmentTimeout,
@@ -74,14 +67,18 @@ func (l *Listener[T, F]) SetSignalDebounce(debounce int) {
 	l.demodulator.SetSignalDebounce(debounce)
 }
 
-func (l *Listener[T, F]) ShowSpot(callsign string) {
-	callsign = strings.ToUpper(callsign)
-	l.indicator.ShowSpot(l.id, callsign, l.peak.SignalFrequency)
+func (l *Listener[T, F]) CallsignDecoded(callsign string, count int, weight int) {
+	l.reporter.CallsignDecoded(l.id, callsign, l.peak.SignalFrequency, count, weight)
 }
 
-func (l *Listener[T, F]) HideSpot(callsign string) {
+func (l *Listener[T, F]) CallsignSpotted(callsign string) {
 	callsign = strings.ToUpper(callsign)
-	l.indicator.HideSpot(l.id, callsign)
+	l.reporter.CallsignSpotted(l.id, callsign, l.peak.SignalFrequency)
+}
+
+func (l *Listener[T, F]) SpotTimeout(callsign string) {
+	callsign = strings.ToUpper(callsign)
+	l.reporter.SpotTimeout(l.id, callsign, l.peak.SignalFrequency)
 }
 
 func (l *Listener[T, F]) Attach(peak *dsp.Peak[T, F]) {
@@ -91,7 +88,7 @@ func (l *Listener[T, F]) Attach(peak *dsp.Peak[T, F]) {
 	l.demodulator.Reset()
 	l.textProcessor.Restart()
 
-	l.indicator.ShowDecode(l.id, *peak)
+	l.reporter.ListenerActivated(l.id, l.peak.SignalFrequency)
 	// log.Printf("\ndemodulating at %v (%d - %d)\n", peak.CenterFrequency(), peak.From, peak.To)
 }
 
@@ -100,10 +97,11 @@ func (l *Listener[T, F]) Attached() bool {
 }
 
 func (l *Listener[T, F]) Detach() {
+	frequency := l.peak.SignalFrequency
 	l.peak = nil
 
 	l.textProcessor.Stop()
-	l.indicator.HideDecode(l.id)
+	l.reporter.ListenerDeactivated(l.id, frequency)
 	// log.Printf("\ndemodulation stopped\n")
 }
 

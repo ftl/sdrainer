@@ -149,7 +149,7 @@ func TestTextWindow_FindNext_IncludeTail(t *testing.T) {
 }
 
 func TestTextProcessor_CollectCallsign(t *testing.T) {
-	p := NewTextProcessor(nil, WallClock, SpotIndicatorFunc(func(string) {}))
+	p := NewTextProcessor(nil, WallClock, SpotReporterFunc(func(string) {}))
 	p.Start()
 	defer p.Stop()
 	receivedText := "cq cq cq de dl1abc dl1abc dl1abc pse k"
@@ -163,7 +163,7 @@ func TestTextProcessor_CollectCallsign(t *testing.T) {
 }
 
 func TestTextProcessor_WriteTimeout(t *testing.T) {
-	p := NewTextProcessor(nil, WallClock, SpotIndicatorFunc(func(string) {}))
+	p := NewTextProcessor(nil, WallClock, SpotReporterFunc(func(string) {}))
 	p.Start()
 	defer p.Stop()
 	receivedText := "cq de dl1abc"

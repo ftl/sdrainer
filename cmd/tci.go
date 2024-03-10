@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -64,7 +65,9 @@ func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	}
 	spotter.SetSilencePeriod(strainFlags.spotSilencePeriod)
 
-	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.StrainMode, spotter, tciFlags.traceTCI)
+	reporter := rx.NewTextReporter[int](os.Stdout)
+
+	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.StrainMode, spotter, reporter, tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -86,7 +89,7 @@ func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 }
 
 func runDecodeTCI(ctx context.Context, cmd *cobra.Command, args []string) {
-	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.DecodeMode, nil, tciFlags.traceTCI)
+	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.DecodeMode, nil, nil, tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}
