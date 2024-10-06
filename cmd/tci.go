@@ -77,15 +77,19 @@ func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	process.SetAttachmentTimeout(strainFlags.attachmentTimeout)
 	process.SetShow(tciFlags.showListeners, tciFlags.showSpots)
 
-	tracer, ok := createTracer()
-	if ok {
+	tracer, runningWithTracer := createTracer()
+	if runningWithTracer {
 		log.Printf("set tracer %#v", tracer)
 		process.SetTracer(tracer)
+		tracer.Start()
 	}
 
 	<-ctx.Done()
 	process.Close()
 	spotter.Stop()
+	if runningWithTracer {
+		tracer.Stop()
+	}
 }
 
 func runDecodeTCI(ctx context.Context, cmd *cobra.Command, args []string) {
