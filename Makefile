@@ -14,13 +14,17 @@ clean:
 	go clean
 	rm -f ${BINARY_NAME}
 
+.PHONY: generate
+generate:
+	go generate ./scope/pb
+
 .PHONY: test
 test:
 	go test -v -timeout=30s -count 1 ./...
 
 .PHONY: build
 build:
-	go build -trimpath -buildmode=pie -mod=readonly -modcacherw -v -ldflags "-linkmode external -extldflags \"${LDFLAGS}\" -X github.com/ftl/sdrainer/cmd.version=${VERSION_NUMBER} -X github.com/ftl/sdrainer/cmd.gitCommit=${GITCOMMIT} -X github.com/ftl/sdrainer/cmd.buildTime=${BUILDTIME}" -o ${BINARY_NAME} .
+	go build -trimpath -buildmode=pie -mod=readonly -modcacherw -v -ldflags "-linkmode internal -extldflags \"${LDFLAGS}\" -X github.com/ftl/sdrainer/cmd.version=${VERSION_NUMBER} -X github.com/ftl/sdrainer/cmd.gitCommit=${GITCOMMIT} -X github.com/ftl/sdrainer/cmd.buildTime=${BUILDTIME}" -o ${BINARY_NAME} .
 
 .PHONY: run
 run: build

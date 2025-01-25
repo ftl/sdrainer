@@ -1,0 +1,34 @@
+// This is the protobuf representation of the SDRainer scope.
+syntax = "proto3";
+package pb;
+
+import "google/protobuf/timestamp.proto";
+
+message TimeFrame {
+    string stream_id = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    map<string, float> values = 3;
+}
+
+message SpectralFrame {
+    string stream_id = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    float from_frequency = 3;
+    float to_frequency = 4;
+    repeated float values = 5;
+    map<string, float> frequency_markers = 6;
+    map<string, float> magnitude_markers = 7;
+}
+
+message Frame {
+    oneof frame {
+        TimeFrame time_frame = 1;
+        SpectralFrame spectral_frame = 2;
+    }
+}
+
+message GetScopeRequest {}
+
+service Scope {
+    rpc GetFrames (GetScopeRequest) returns (stream Frame) {}
+}
