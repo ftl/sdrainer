@@ -3,6 +3,9 @@
 package scope
 
 import (
+	"fmt"
+	"log"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -34,22 +37,63 @@ type SpectralFrame struct {
 }
 
 type Scope struct {
-	server *grpcServer
+	address string
+
+	server     *grpcServer
+	serverLock *sync.Mutex
 }
 
-func NewScope(address string) (*Scope, error) {
-	server, err := newGRPCServer(address, defaultOutBufferSize)
-	if err != nil {
-		return nil, err
+func NewScope(address string) *Scope {
+	return &Scope{
+		address:    address,
+		server:     nil,
+		serverLock: &sync.Mutex{},
 	}
-	return &Scope{server: server}, nil
+}
+
+func (s *Scope) Active() bool {
+	s.serverLock.Lock()
+	defer s.serverLock.Unlock()
+	return s.server != nil
 }
 
 func (s *Scope) Start() error {
-	return s.server.Start()
+	if s.Active() {
+		return fmt.Errorf("scope was already started")
+	}
+
+	server, err := newGRPCServer(s.address, defaultOutBufferSize)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		s.serverLock.Lock()
+		if s.server != nil {
+			s.serverLock.Unlock()
+			return
+		}
+		s.server = server
+		s.serverLock.Unlock()
+
+		err := s.server.Start()
+		if err != nil {
+			log.Printf("Scope server failed: %v", err)
+		}
+
+		s.serverLock.Lock()
+		s.server = nil
+		s.serverLock.Unlock()
+	}()
+
+	return nil
 }
 
 func (s *Scope) Stop() {
+	if !s.Active() {
+		return
+	}
+
 	s.server.Stop()
 }
 
