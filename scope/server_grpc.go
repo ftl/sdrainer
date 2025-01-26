@@ -20,6 +20,8 @@ type grpcServer struct {
 	register      chan chan *pb.Frame
 	out           []chan *pb.Frame
 	shutdown      chan struct{}
+
+	activeAddress net.Addr
 }
 
 func newGRPCServer(address string, outBufferSize int) (*grpcServer, error) {
@@ -93,17 +95,19 @@ func (s *grpcServer) Start() error {
 	if s.server != nil {
 		return fmt.Errorf("server already running")
 	}
+	s.server = grpc.NewServer()
+	pb.RegisterScopeServer(s.server, s)
 
 	listener, err := net.Listen("tcp", s.address.String())
 	if err != nil {
 		return fmt.Errorf("cannot listen on address %s: %w", s.address, err)
 	}
+	s.activeAddress = listener.Addr()
 
 	go s.run()
 
-	s.server = grpc.NewServer()
-	pb.RegisterScopeServer(s.server, s)
 	err = s.server.Serve(listener)
+	s.server = nil
 	close(s.shutdown)
 	return err
 }
@@ -113,7 +117,10 @@ func (s *grpcServer) Stop() {
 		return
 	}
 	s.server.Stop()
-	s.server = nil
+}
+
+func (s *grpcServer) Addr() net.Addr {
+	return s.activeAddress
 }
 
 func (s *grpcServer) GetFrames(_ *pb.GetScopeRequest, stream pb.Scope_GetFramesServer) error {
