@@ -8,7 +8,7 @@ import (
 
 	"github.com/ftl/sdrainer/cw"
 	"github.com/ftl/sdrainer/dsp"
-	"github.com/ftl/sdrainer/trace"
+	"github.com/ftl/sdrainer/scope"
 )
 
 const (
@@ -51,8 +51,8 @@ func (l *Listener[T, F]) ID() string {
 	return l.id
 }
 
-func (l *Listener[T, F]) SetTracer(tracer trace.Tracer) {
-	l.demodulator.SetTracer(tracer)
+func (l *Listener[T, F]) SetScope(scope scope.Scope) {
+	l.demodulator.SetScope(scope)
 }
 
 func (l *Listener[T, F]) SetSilenceTimeout(timeout time.Duration) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ftl/digimodes/cw"
+	"github.com/ftl/sdrainer/scope"
 )
 
 /*
@@ -24,10 +25,10 @@ See also:
 */
 
 const (
-	traceDecode       = "decode"
-	traceSignalTiming = "signal_timing"
-	traceGapTiming    = "gap_timing"
-	traceSignal       = "signal"
+	scopeDecode       scope.StreamID = "decode"
+	scopeSignalTiming scope.StreamID = "signal_timing"
+	scopeGapTiming    scope.StreamID = "gap_timing"
+	scopeSignal       scope.StreamID = "signal"
 
 	unknownCharacter rune = 0xA6
 
@@ -37,10 +38,6 @@ const (
 	minDitTime ticks = 2.0
 	maxDitTime ticks = 7.0
 )
-
-type Tracer interface {
-	Trace(string, string, ...any)
-}
 
 var noSymbol = cw.Symbol{}
 
@@ -127,7 +124,7 @@ type Decoder struct {
 	onThreshold        *AdaptiveThreshold
 	offThreshold       *AdaptiveThreshold
 
-	tracer     Tracer
+	scope      scope.Scope
 	traceEdges bool
 }
 
@@ -138,6 +135,7 @@ func NewDecoder(out io.Writer, sampleRate int, blockSize int) *Decoder {
 		wpm:                  defaultWPM,
 		abortDecodeAfterDits: 10,
 		decodeTable:          generateDecodeTable(),
+		scope:                scope.NewNullScope(),
 	}
 	result.currentChar.clear()
 
@@ -158,8 +156,11 @@ func generateDecodeTable() map[cwChar]rune {
 	return result
 }
 
-func (d *Decoder) SetTracer(tracer Tracer) {
-	d.tracer = tracer
+func (d *Decoder) SetScope(scope scope.Scope) {
+	if scope == nil {
+		panic("scope must not be nil")
+	}
+	d.scope = scope
 }
 
 func (d *Decoder) Reset() {
@@ -224,7 +225,7 @@ func (d *Decoder) Tick(state bool) {
 	}
 	upperBound := d.offThreshold.Get() * ticks(d.abortDecodeAfterDits)
 
-	if d.tracer != nil {
+	if d.scope.Active() {
 		onDuration := currentDuration
 		offDuration := currentDuration
 		stateInt := 0
@@ -234,10 +235,11 @@ func (d *Decoder) Tick(state bool) {
 		} else {
 			onDuration = 0
 		}
-		d.tracer.Trace(traceDecode, "%f;%f;%d\n", currentDuration, d.onThreshold.Get(), stateInt)
-		d.tracer.Trace(traceSignalTiming, "%f;%f;%f;%f;%f;%d\n", onDuration, d.onThreshold.Get(), d.onThreshold.Low(), d.onThreshold.High(), 2*d.onThreshold.High(), stateInt)
-		d.tracer.Trace(traceGapTiming, "%f;%f;%f;%f;%f;%d\n", offDuration, d.offThreshold.Get(), d.offThreshold.Low(), d.offThreshold.High(), 2*d.offThreshold.High()-d.offThreshold.Get(), stateInt)
-		d.tracer.Trace(traceSignal, "%d\n", stateInt)
+		frameTime := time.Now()
+		d.scopeDecode(frameTime, currentDuration, d.onThreshold, stateInt)
+		d.scopeSignalTiming(frameTime, onDuration, d.onThreshold, stateInt)
+		d.scopeGapTiming(frameTime, offDuration, d.offThreshold, stateInt)
+		d.scopeSignal(frameTime, stateInt)
 	}
 
 	if d.decoding && currentDuration > upperBound {
@@ -426,4 +428,64 @@ func (t *AdaptiveThreshold) Low() ticks {
 
 func (t *AdaptiveThreshold) High() ticks {
 	return t.high
+}
+
+func (d *Decoder) scopeDecode(frameTime time.Time, currentDuration ticks, onThreshold *AdaptiveThreshold, state int) {
+	d.scope.ShowTimeFrame(&scope.TimeFrame{
+		Frame: scope.Frame{
+			Stream:    scopeDecode,
+			Timestamp: frameTime,
+		},
+		Values: map[scope.ChannelID]float64{
+			"duration":     float64(currentDuration),
+			"on_threshold": float64(onThreshold.Get()),
+			"state":        float64(state),
+		},
+	})
+}
+
+func (d *Decoder) scopeSignalTiming(frameTime time.Time, onDuration ticks, onThreshold *AdaptiveThreshold, state int) {
+	d.scope.ShowTimeFrame(&scope.TimeFrame{
+		Frame: scope.Frame{
+			Stream:    scopeSignalTiming,
+			Timestamp: frameTime,
+		},
+		Values: map[scope.ChannelID]float64{
+			"on_duration":         float64(onDuration),
+			"on_threshold":        float64(onThreshold.Get()),
+			"on_threshold_low":    float64(onThreshold.Low()),
+			"on_threshold_high":   float64(onThreshold.High()),
+			"on_threshold_high_2": float64(2 * onThreshold.High()),
+			"state":               float64(state),
+		},
+	})
+}
+
+func (d *Decoder) scopeGapTiming(frameTime time.Time, offDuration ticks, offThreshold *AdaptiveThreshold, state int) {
+	d.scope.ShowTimeFrame(&scope.TimeFrame{
+		Frame: scope.Frame{
+			Stream:    scopeGapTiming,
+			Timestamp: frameTime,
+		},
+		Values: map[scope.ChannelID]float64{
+			"off_duration":         float64(offDuration),
+			"off_threshold":        float64(offThreshold.Get()),
+			"off_threshold_low":    float64(offThreshold.Low()),
+			"off_threshold_high":   float64(offThreshold.High()),
+			"off_threshold_high_2": float64(2*offThreshold.High() - offThreshold.Get()),
+			"state":                float64(state),
+		},
+	})
+}
+
+func (d *Decoder) scopeSignal(frameTime time.Time, state int) {
+	d.scope.ShowTimeFrame(&scope.TimeFrame{
+		Frame: scope.Frame{
+			Stream:    scopeSignal,
+			Timestamp: frameTime,
+		},
+		Values: map[scope.ChannelID]float64{
+			"state": float64(state),
+		},
+	})
 }

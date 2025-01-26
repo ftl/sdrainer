@@ -2,13 +2,14 @@ package cw
 
 import (
 	"io"
+	"time"
 
 	"github.com/ftl/sdrainer/dsp"
-	"github.com/ftl/sdrainer/trace"
+	"github.com/ftl/sdrainer/scope"
 )
 
 const (
-	traceDemod = "demod"
+	scopeDemod = "demod"
 
 	defaultSignalDebounce = 1
 )
@@ -18,14 +19,14 @@ const (
 type SpectralDemodulator[M, F dsp.Number] struct {
 	signalDebouncer *dsp.BoolDebouncer
 	decoder         *Decoder
-	tracer          trace.Tracer
+	scope           scope.Scope
 }
 
 func NewSpectralDemodulator[M, F dsp.Number](out io.Writer, sampleRate int, blockSize int) *SpectralDemodulator[M, F] {
 	result := &SpectralDemodulator[M, F]{
 		signalDebouncer: dsp.NewBoolDebouncer(defaultSignalDebounce),
 		decoder:         NewDecoder(out, sampleRate, blockSize),
-		tracer:          new(trace.NoTracer),
+		scope:           scope.NewNullScope(),
 	}
 
 	return result
@@ -35,9 +36,9 @@ func (d *SpectralDemodulator[M, F]) SetSignalDebounce(debounce int) {
 	d.signalDebouncer.SetThreshold(debounce)
 }
 
-func (d *SpectralDemodulator[M, F]) SetTracer(tracer trace.Tracer) {
-	d.tracer = tracer
-	d.decoder.SetTracer(tracer)
+func (d *SpectralDemodulator[M, F]) SetScope(scope scope.Scope) {
+	d.scope = scope
+	d.decoder.SetScope(scope)
 }
 
 func (d *SpectralDemodulator[M, F]) Reset() {
@@ -49,11 +50,32 @@ func (d *SpectralDemodulator[M, F]) Tick(value M, threshold M) {
 	debounced := d.signalDebouncer.Debounce(state)
 
 	d.decoder.Tick(debounced)
+	d.scopeDemod(threshold, value, state, debounced)
+}
+
+func (d *SpectralDemodulator[M, F]) scopeDemod(threshold M, value M, state bool, debounced bool) {
+	if !d.scope.Active() {
+		return
+	}
 
 	stateInt := -1
-	_ = stateInt
-	if debounced {
-		stateInt = 80
+	if state {
+		stateInt = 100
 	}
-	d.tracer.Trace(traceDemod, "%f;%f;%d\n", threshold, value, stateInt)
+	debouncedInt := -1
+	if debounced {
+		debouncedInt = 80
+	}
+	d.scope.ShowTimeFrame(&scope.TimeFrame{
+		Frame: scope.Frame{
+			Stream:    scopeDemod,
+			Timestamp: time.Now(),
+		},
+		Values: map[scope.ChannelID]float64{
+			"threshold": float64(threshold),
+			"value":     float64(value),
+			"state":     float64(stateInt),
+			"debounced": float64(debouncedInt),
+		},
+	})
 }

@@ -31,6 +31,7 @@ type SpectralFrame struct {
 
 // Scope shows time and spectral frames for a visualisation of the inner workings of SDRainer.
 type Scope interface {
+	Active() bool
 	ShowTimeFrame(timeFrame *TimeFrame)
 	ShowSpectralFrame(spectralFrame *SpectralFrame)
 }
@@ -39,5 +40,6 @@ type Scope interface {
 type NullScope struct{}
 
 func NewNullScope() *NullScope                                      { return &NullScope{} }
+func (s *NullScope) Active() bool                                   { return false }
 func (s *NullScope) ShowTimeFrame(timeFrame *TimeFrame)             {}
 func (s *NullScope) ShowSpectralFrame(spectralFrame *SpectralFrame) {}

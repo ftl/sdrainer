@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/ftl/sdrainer/rx"
+	"github.com/ftl/sdrainer/scope"
 	"github.com/ftl/sdrainer/tci"
 	"github.com/ftl/sdrainer/telnet"
 )
@@ -58,7 +59,7 @@ func init() {
 	decodeTCICmd.Flags().MarkHidden("trace_tci")
 }
 
-func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
+func runStrainTCI(ctx context.Context, scope scope.Scope, cmd *cobra.Command, args []string) {
 	spotter, err := telnet.NewServer(fmt.Sprintf(":%d", strainFlags.telnetPort), strainFlags.telnetCall, formatVersion())
 	if err != nil {
 		log.Fatal(err)
@@ -76,35 +77,21 @@ func runStrainTCI(ctx context.Context, cmd *cobra.Command, args []string) {
 	process.SetSilenceTimeout(strainFlags.silenceTimeout)
 	process.SetAttachmentTimeout(strainFlags.attachmentTimeout)
 	process.SetShow(tciFlags.showListeners, tciFlags.showSpots)
-
-	tracer, runningWithTracer := createTracer()
-	if runningWithTracer {
-		log.Printf("set tracer %#v", tracer)
-		process.SetTracer(tracer)
-		tracer.Start()
-	}
+	process.SetScope(scope)
 
 	<-ctx.Done()
 	process.Close()
 	spotter.Stop()
-	if runningWithTracer {
-		tracer.Stop()
-	}
 }
 
-func runDecodeTCI(ctx context.Context, cmd *cobra.Command, args []string) {
+func runDecodeTCI(ctx context.Context, scope scope.Scope, cmd *cobra.Command, args []string) {
 	process, err := tci.New(tciFlags.host, tciFlags.trx, rx.DecodeMode, nil, nil, tciFlags.traceTCI)
 	if err != nil {
 		log.Fatal(err)
 	}
 	process.SetThreshold(tciFlags.threshold)
 	process.SetSignalDebounce(decodeFlags.debounce)
-
-	tracer, ok := createTracer()
-	if ok {
-		log.Printf("set tracer %#v", tracer)
-		process.SetTracer(tracer)
-	}
+	process.SetScope(scope)
 
 	<-ctx.Done()
 	process.Close()

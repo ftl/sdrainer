@@ -8,12 +8,11 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
-	"github.com/ftl/sdrainer/trace"
+	"github.com/ftl/sdrainer/scope"
 )
 
 var (
@@ -23,10 +22,10 @@ var (
 )
 
 var rootFlags = struct {
-	pprof            bool
-	debug            bool
-	traceContext     string
-	traceDestination string
+	pprof        bool
+	debug        bool
+	scope        bool
+	scopeAddress string
 }{}
 
 var rootCmd = &cobra.Command{
@@ -43,15 +42,15 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&rootFlags.pprof, "pprof", false, "enable pprof")
 	rootCmd.PersistentFlags().BoolVar(&rootFlags.debug, "debug", false, "enable debug logging")
-	rootCmd.PersistentFlags().StringVar(&rootFlags.traceContext, "trace", "", "spectrum | demod | decode")
-	rootCmd.PersistentFlags().StringVar(&rootFlags.traceDestination, "trace_to", "", "file:<filename> | udp:<host:port>")
+	rootCmd.PersistentFlags().BoolVar(&rootFlags.scope, "scope", false, "enable the scope server for insights into the inner workings")
+	rootCmd.PersistentFlags().StringVar(&rootFlags.scopeAddress, "scope-address", ":35369", "listening address and scope for the scope server")
 
 	rootCmd.PersistentFlags().MarkHidden("pprof")
-	rootCmd.PersistentFlags().MarkHidden("trace")
-	rootCmd.PersistentFlags().MarkHidden("trace_to")
+	rootCmd.PersistentFlags().MarkHidden("scope")
+	rootCmd.PersistentFlags().MarkHidden("scope_address")
 }
 
-func runWithCtx(f func(ctx context.Context, cmd *cobra.Command, args []string)) func(cmd *cobra.Command, args []string) {
+func runWithCtx(f func(ctx context.Context, scope scope.Scope, cmd *cobra.Command, args []string)) func(cmd *cobra.Command, args []string) {
 	return func(cmd *cobra.Command, args []string) {
 		if !rootFlags.debug {
 			log.SetOutput(&nopWriter{})
@@ -66,12 +65,27 @@ func runWithCtx(f func(ctx context.Context, cmd *cobra.Command, args []string)) 
 			}()
 		}
 
+		var scopeServer *scope.ScopeServer
+		var s scope.Scope = scope.NewNullScope()
+		if rootFlags.scope {
+			scopeServer = scope.NewScopeServer(rootFlags.scopeAddress)
+			err := scopeServer.Start()
+			if err != nil {
+				log.Fatalf("cannot start scope server: %v", err)
+			}
+			s = scopeServer
+		}
+
 		ctx, cancel := context.WithCancel(context.Background())
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 		go handleCancelation(signals, cancel)
 
-		f(ctx, cmd, args)
+		f(ctx, s, cmd, args)
+
+		if scopeServer != nil {
+			scopeServer.Stop()
+		}
 	}
 }
 
@@ -91,29 +105,6 @@ func handleCancelation(signals <-chan os.Signal, cancel context.CancelFunc) {
 		} else {
 			log.Fatal("hard shutdown")
 		}
-	}
-}
-
-func createTracer() (trace.Tracer, bool) {
-	if rootFlags.traceDestination == "" {
-		log.Printf("no destination")
-		return nil, false
-	}
-
-	protocol, destination, found := strings.Cut(rootFlags.traceDestination, ":")
-	if !found {
-		log.Printf("wrong parts %v", rootFlags.traceDestination)
-		return nil, false
-	}
-
-	switch strings.ToLower(protocol) {
-	case "file":
-		return trace.NewFileTracer(rootFlags.traceContext, destination), true
-	case "udp":
-		return trace.NewUDPTracer(rootFlags.traceContext, destination), true
-	default:
-		log.Printf("wrong protocol %v", protocol)
-		return nil, false
 	}
 }
 

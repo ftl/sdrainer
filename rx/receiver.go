@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/ftl/sdrainer/dsp"
-	"github.com/ftl/sdrainer/trace"
+	"github.com/ftl/sdrainer/scope"
 )
 
 const (
-	traceSpectrum = "spectrum"
+	scopeSpectrum = "spectrum"
 
 	iqBufferSize   = 100
 	cumulationSize = 100
@@ -87,7 +87,7 @@ type Receiver[T, F dsp.Number] struct {
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
 
-	tracer trace.Tracer
+	scope scope.Scope
 }
 
 func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock) *Receiver[T, F] {
@@ -107,7 +107,7 @@ func NewReceiver[T, F dsp.Number](id string, mode ReceiverMode, clock Clock) *Re
 		fft: dsp.NewFFT[T](),
 		out: NewChannelWriter(os.Stdout),
 
-		tracer: new(trace.NoTracer),
+		scope: scope.NewNullScope(),
 	}
 
 	listenerPoolSize := defaultListenerPoolSize
@@ -123,7 +123,7 @@ func (r *Receiver[T, F]) newListener(id string) *Listener[T, F] {
 	result := NewListener[T, F](id, r.out.Channel(id), r.clock, r, r.sampleRate, r.blockSize)
 	result.SetAttachmentTimeout(r.attachmentTimeout)
 	result.SetSilenceTimeout(r.silenceTimeout)
-	result.SetTracer(r.tracer)
+	result.SetScope(r.scope)
 	return result
 }
 
@@ -151,8 +151,6 @@ func (r *Receiver[T, F]) Stop() {
 	}
 
 	r.listeners.Reset()
-
-	r.tracer.Stop()
 
 	close(r.stop)
 	<-r.stopped
@@ -207,11 +205,11 @@ func (r *Receiver[T, F]) SpotTimeout(listener string, callsign string, frequency
 	}
 }
 
-func (r *Receiver[T, F]) SetTracer(tracer trace.Tracer) {
+func (r *Receiver[T, F]) SetScope(scope scope.Scope) {
 	r.do(func() {
-		r.tracer = tracer
+		r.scope = scope
 		r.listeners.ForEach(func(l *Listener[T, F]) {
-			l.SetTracer(tracer)
+			l.SetScope(scope)
 		})
 	})
 }
@@ -296,7 +294,6 @@ func (r *Receiver[T, F]) SetVFOOffset(offset F) {
 			r.peaks.Activate(&peak)
 			listener.Attach(&peak)
 			r.out.SetActive(listener.ID())
-			r.tracer.Start()
 		case StrainMode:
 			freq := r.vfoOffset + r.centerFrequency
 			bin := r.frequencyMapping.FrequencyToBin(freq)
@@ -428,10 +425,7 @@ func (r *Receiver[T, F]) run() {
 					}
 				}
 
-				if r.tracer.Context() == traceSpectrum {
-					r.tracer.TraceBlock(traceSpectrum, scaledValuesForTracing(cumulation, 1.0/float64(cumulationSize)))
-					r.tracer.Trace(traceSpectrum, "meta;yThreshold;%v", peakThreshold)
-
+				if r.scope.Active() {
 					signalBin := -1
 					switch r.mode {
 					case DecodeMode:
@@ -444,7 +438,22 @@ func (r *Receiver[T, F]) run() {
 							signalBin = listener.Peak().SignalBin
 						}
 					}
-					r.tracer.Trace(traceSpectrum, "meta;xSignalBin;%v", signalBin)
+
+					r.scope.ShowSpectralFrame(&scope.SpectralFrame{
+						Frame: scope.Frame{
+							Stream:    scopeSpectrum,
+							Timestamp: time.Now(),
+						},
+						FromFrequency: 0,
+						ToFrequency:   1,
+						Values:        scaledValuesForScope(cumulation, 1.0/float64(cumulationSize)),
+						FrequencyMarkers: map[scope.MarkerID]float64{
+							"signal_bin": float64(signalBin),
+						},
+						MagnitudeMarkers: map[scope.MarkerID]float64{
+							"threshold": float64(peakThreshold),
+						},
+					})
 				}
 
 				clear(cumulation)
@@ -454,8 +463,8 @@ func (r *Receiver[T, F]) run() {
 	}
 }
 
-func scaledValuesForTracing[T dsp.Number](block dsp.Block[T], scale float64) []any {
-	result := make([]any, len(block))
+func scaledValuesForScope[T dsp.Number](block dsp.Block[T], scale float64) []float64 {
+	result := make([]float64, len(block))
 	for i := range result {
 		result[i] = float64(block[i]) * scale
 	}

@@ -8,7 +8,7 @@ import (
 
 	"github.com/ftl/sdrainer/cli"
 	"github.com/ftl/sdrainer/rx"
-	"github.com/ftl/sdrainer/trace"
+	"github.com/ftl/sdrainer/scope"
 )
 
 const (
@@ -33,7 +33,7 @@ type Process struct {
 	signalDebounce    int
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
-	tracer            trace.Tracer
+	scope             scope.Scope
 	showListeners     bool
 	showSpots         bool
 
@@ -60,6 +60,7 @@ func New(host string, trx int, mode rx.ReceiverMode, spotter Spotter, reporter r
 		opAsync: make(chan func(), 100),
 		close:   make(chan struct{}),
 		closed:  make(chan struct{}),
+		scope:   scope.NewNullScope(),
 	}
 	result.listener = &tciListener{process: result, trx: result.trx}
 	result.receiver = rx.NewReceiver[float32, int]("", mode, rx.WallClock)
@@ -107,10 +108,10 @@ func (p *Process) doAsync(f func()) {
 	}
 }
 
-func (p *Process) SetTracer(tracer trace.Tracer) {
-	p.tracer = tracer
+func (p *Process) SetScope(scope scope.Scope) {
+	p.scope = scope
 	if p.client.Connected() {
-		p.receiver.SetTracer(tracer)
+		p.receiver.SetScope(scope)
 	}
 }
 
@@ -171,9 +172,7 @@ func (p *Process) onConnected(connected bool) {
 	if p.attachmentTimeout > 0 {
 		p.receiver.SetAttachmentTimeout(p.attachmentTimeout)
 	}
-	if p.tracer != nil {
-		p.receiver.SetTracer(p.tracer)
-	}
+	p.receiver.SetScope(p.scope)
 
 	p.client.SetIQSampleRate(48000)
 	p.client.StartIQ(p.trx)

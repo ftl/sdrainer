@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/ftl/sdrainer/cw"
+	"github.com/ftl/sdrainer/scope"
 	"github.com/jfreymuth/pulse"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +37,7 @@ func init() {
 	pulseCmd.Flags().IntVar(&pulseFlags.wpm, "wpm", 20, "preset speed in WpM")
 }
 
-func runPulse(ctx context.Context, cmd *cobra.Command, args []string) {
+func runPulse(ctx context.Context, scope scope.Scope, cmd *cobra.Command, args []string) {
 	client, err := pulse.NewClient(pulse.ClientApplicationName("SDRainer"))
 	if err != nil {
 		log.Fatal(err)
@@ -58,14 +59,7 @@ func runPulse(ctx context.Context, cmd *cobra.Command, args []string) {
 	demodulator.SetScale(pulseFlags.scale)
 	demodulator.SetDebounceThreshold(decodeFlags.debounce)
 	demodulator.SetMagnitudeThreshold(pulseFlags.magnitudeThreshold)
-
-	tracer, ok := createTracer()
-	if ok {
-		log.Printf("set tracer %#v", tracer)
-		demodulator.SetTracer(tracer)
-		tracer.Start()
-		defer tracer.Stop()
-	}
+	demodulator.SetScope(scope)
 
 	stream, err := client.NewRecord(pulse.Float32Writer(demodulator.Write), pulse.RecordBufferFragmentSize(2*uint32(demodulator.Blocksize())))
 	if err != nil {

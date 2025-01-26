@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/ftl/sdrainer/rx"
-	"github.com/ftl/sdrainer/trace"
+	"github.com/ftl/sdrainer/scope"
 )
 
 const (
@@ -29,7 +29,7 @@ type Process struct {
 	signalDebounce    int
 	silenceTimeout    time.Duration
 	attachmentTimeout time.Duration
-	tracer            trace.Tracer
+	scope             scope.Scope
 
 	close chan struct{}
 }
@@ -40,6 +40,7 @@ func New(host string, username string, password string, centerFrequency float64,
 		centerFrequency: centerFrequency,
 		rxFrequency:     centerFrequency,
 		close:           make(chan struct{}),
+		scope:           scope.NewNullScope(),
 	}
 	result.receiver = rx.NewReceiver[float32, int]("", rx.StrainMode, rx.WallClock)
 
@@ -87,10 +88,7 @@ func (p *Process) Connected(sampleRate int) {
 	if p.attachmentTimeout > 0 {
 		p.receiver.SetAttachmentTimeout(p.attachmentTimeout)
 	}
-	if p.tracer != nil {
-		p.receiver.SetTracer(p.tracer)
-		p.tracer.Start()
-	}
+	p.receiver.SetScope(p.scope)
 }
 
 func (p *Process) IQData(sampleRate int, data []float32) {
@@ -106,9 +104,9 @@ func (p *Process) IQData(sampleRate int, data []float32) {
 	}
 }
 
-func (p *Process) SetTracer(tracer trace.Tracer) {
-	p.tracer = tracer
-	p.receiver.SetTracer(tracer)
+func (p *Process) SetScope(scope scope.Scope) {
+	p.scope = scope
+	p.receiver.SetScope(scope)
 }
 
 func (p *Process) SetThreshold(threshold int) {

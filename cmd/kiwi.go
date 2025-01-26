@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/ftl/sdrainer/kiwi"
+	"github.com/ftl/sdrainer/scope"
 	"github.com/ftl/sdrainer/telnet"
 	"github.com/spf13/cobra"
 )
@@ -37,7 +38,7 @@ func init() {
 	strainKiwiCmd.Flags().IntVar(&kiwiFlags.bandwidth, "bandwidth", 10_000, "the bandwidth that is observed to find CW signals (max 12000)")
 }
 
-func runStrainKiwi(ctx context.Context, cmd *cobra.Command, args []string) {
+func runStrainKiwi(ctx context.Context, scope scope.Scope, cmd *cobra.Command, args []string) {
 	spotter, err := telnet.NewServer(fmt.Sprintf(":%d", strainFlags.telnetPort), strainFlags.telnetCall, formatVersion())
 	if err != nil {
 		log.Fatal(err)
@@ -53,12 +54,7 @@ func runStrainKiwi(ctx context.Context, cmd *cobra.Command, args []string) {
 	process.SetSilenceTimeout(strainFlags.silenceTimeout)
 	process.SetAttachmentTimeout(strainFlags.attachmentTimeout)
 	process.SetRXFrequency(kiwiFlags.rxFrequency)
-
-	tracer, ok := createTracer()
-	if ok {
-		log.Printf("set tracer %#v", tracer)
-		process.SetTracer(tracer)
-	}
+	process.SetScope(scope)
 
 	<-ctx.Done()
 	process.Close()

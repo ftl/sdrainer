@@ -4,13 +4,14 @@ import (
 	"io"
 	"log"
 	"math"
+	"time"
 
 	"github.com/ftl/sdrainer/dsp"
-	"github.com/ftl/sdrainer/trace"
+	"github.com/ftl/sdrainer/scope"
 )
 
 const (
-	traceAudio = "audio"
+	scopeAudio = "audio"
 
 	defaultBufferSize        = 1024 * 1024 // 1k
 	defaultDebounceThreshold = 3
@@ -30,7 +31,7 @@ type AudioDemodulator struct {
 	close  chan struct{}
 	closed chan struct{}
 
-	tracer Tracer
+	scope scope.Scope
 }
 
 func NewAudioDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int) *AudioDemodulator {
@@ -47,7 +48,7 @@ func NewAudioDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSiz
 		op:           make(chan func()),
 		close:        make(chan struct{}),
 		closed:       make(chan struct{}),
-		tracer:       new(trace.NoTracer),
+		scope:        scope.NewNullScope(),
 	}
 	result.decoder = NewDecoder(out, sampleRate, result.filter.Blocksize())
 
@@ -66,10 +67,10 @@ func (d *AudioDemodulator) Close() {
 	}
 }
 
-func (d *AudioDemodulator) SetTracer(tracer trace.Tracer) {
+func (d *AudioDemodulator) SetScope(scope scope.Scope) {
 	d.do(func() {
-		d.tracer = tracer
-		d.decoder.SetTracer(tracer)
+		d.scope = scope
+		d.decoder.SetScope(scope)
 	})
 }
 
@@ -198,20 +199,10 @@ func (d *AudioDemodulator) run() {
 			}
 			block = block[:0]
 
-			stateInt := 0
-			if state {
-				stateInt = 1
-			}
-
 			debounced := d.debouncer.Debounce(state)
-			debouncedInt := 0
-			if debounced {
-				debouncedInt = 1
-			}
-
-			d.tracer.Trace(traceAudio, "%f;%f;%d;%d\n", d.filter.MagnitudeThreshold()*50, magnitude*50, stateInt*30, debouncedInt*40)
-
 			d.decoder.Tick(debounced)
+
+			d.scopeAudio(d.filter.MagnitudeThreshold(), magnitude, state, debounced)
 		case <-d.close:
 			d.decoder.stop()
 			return
@@ -227,4 +218,32 @@ func truncate(value float32) float32 {
 	} else {
 		return value
 	}
+}
+
+func (d *AudioDemodulator) scopeAudio(magnitudeThreshold float64, magnitude float64, state bool, debounced bool) {
+	if !d.scope.Active() {
+		return
+	}
+
+	stateInt := 0
+	if state {
+		stateInt = 1
+	}
+	debouncedInt := 0
+	if debounced {
+		debouncedInt = 1
+	}
+
+	d.scope.ShowTimeFrame(&scope.TimeFrame{
+		Frame: scope.Frame{
+			Stream:    scopeAudio,
+			Timestamp: time.Now(),
+		},
+		Values: map[scope.ChannelID]float64{
+			"magnitude_threshold": magnitudeThreshold * 50,
+			"magnitude":           magnitude * 50,
+			"state":               float64(stateInt) * 30,
+			"debounced":           float64(debouncedInt) * 40,
+		},
+	})
 }
