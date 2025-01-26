@@ -5,6 +5,7 @@ package scope
 import (
 	"fmt"
 	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -55,6 +56,15 @@ func (s *Scope) Active() bool {
 	s.serverLock.Lock()
 	defer s.serverLock.Unlock()
 	return s.server != nil
+}
+
+func (s *Scope) Addr() net.Addr {
+	s.serverLock.Lock()
+	defer s.serverLock.Unlock()
+	if s.server != nil {
+		return s.server.Addr()
+	}
+	return nil
 }
 
 func (s *Scope) Start() error {

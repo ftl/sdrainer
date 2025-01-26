@@ -68,10 +68,8 @@ func TestSendFramesToClient(t *testing.T) {
 	go func() {
 		server.Start()
 	}()
-	defer func() {
-		server.Stop()
-	}()
 	time.Sleep(100 * time.Millisecond)
+	defer server.Stop()
 
 	conn, err := grpc.NewClient(server.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
