@@ -10,7 +10,7 @@ import (
 )
 
 func TestStartStopScope(t *testing.T) {
-	scope := NewScope("localhost:")
+	scope := NewScopeServer("localhost:")
 
 	err := scope.Start()
 	require.NoError(t, err)
@@ -23,7 +23,7 @@ func TestStartStopScope(t *testing.T) {
 }
 
 func TestFrameRoundTrip(t *testing.T) {
-	scope := NewScope("localhost:")
+	scope := NewScopeServer("localhost:")
 
 	err := scope.Start()
 	require.NoError(t, err)
@@ -54,8 +54,8 @@ func TestFrameRoundTrip(t *testing.T) {
 	}()
 	time.Sleep(100 * time.Millisecond)
 
-	scope.SendTimeFrame(&TimeFrame{Frame: Frame{Stream: "frame1"}})
-	scope.SendSpectralFrame(&SpectralFrame{Frame: Frame{Stream: "frame2"}})
+	scope.ShowTimeFrame(&TimeFrame{Frame: Frame{Stream: "frame1"}})
+	scope.ShowSpectralFrame(&SpectralFrame{Frame: Frame{Stream: "frame2"}})
 	framesReceived.Wait()
 
 	assert.Equal(t, StreamID("frame1"), timeFrame.Stream)
