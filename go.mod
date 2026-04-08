@@ -1,16 +1,6 @@
 module github.com/ftl/sdrainer
 
-go 1.22
-
-toolchain go1.23.4
-
-// replace github.com/ftl/digimodes => ../digimodes
-
-// replace github.com/ftl/patrix => ../patrix
-
-// replace github.com/ftl/tci => ../tci
-
-// replace github.com/ftl/hamradio => ../hamradio
+go 1.26
 
 require (
 	github.com/ftl/digimodes v0.0.0-20231231131023-cffadad68e9e
