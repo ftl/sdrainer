@@ -11,6 +11,7 @@ import (
 	"github.com/ftl/sdrainer/cli"
 	"github.com/ftl/sdrainer/core"
 	"github.com/ftl/sdrainer/iq"
+	"github.com/ftl/sdrainer/multirx"
 	"github.com/ftl/sdrainer/pipeline"
 )
 
@@ -224,9 +225,10 @@ func (p *Process) newPipeline(current *receiver) *pipeline.Pipeline[float32, int
 	config := pipeline.DefaultConfig(sampleRate, current.centerFrequency)
 	config.PeakThreshold = p.peakThreshold
 
+	// only the first receiver writes to the scope, see the rules of the package multirx
 	scope := p.scope
 	if current.trx != p.firstTRX() {
-		scope = &core.NullScopeService{}
+		scope = multirx.ScopeOf(1, p.scope)
 	}
 
 	result := pipeline.New[float32, int](config, scope)
@@ -235,10 +237,23 @@ func (p *Process) newPipeline(current *receiver) *pipeline.Pipeline[float32, int
 		result.SetRecorder(p.recorder)
 	}
 	result.SetSpotter(p.spotter)
-	result.Notify(&trxListener{trx: current.trx, allTRX: p.allTRX, process: p, next: p.channelService})
+	result.Notify(p.channelServiceOf(current.trx))
 	result.Start()
 
 	return result
+}
+
+// channelServiceOf gives the events of one receiver to the service of the consumer and to the
+// process, which draws them on the panorama of the TCI device.
+//
+// With more than one receiver the id of a channel carries the number of that receiver, see the
+// rules of the package multirx.
+func (p *Process) channelServiceOf(trx int) ChannelService {
+	result := multirx.FanOut[int](p.channelService, p)
+	if !p.allTRX {
+		return result
+	}
+	return multirx.WithReceiverIndex(trx, result)
 }
 
 // receiverOf gives the receiver of one TRX and makes it if it does not exist. The caller must hold
@@ -329,6 +344,14 @@ var (
 	spotColor   tci.ARGB = tci.NewARGB(255, 255, 255, 0)
 )
 
+// The process is a channel service of its own: it draws the callsigns on the panorama of the TCI
+// device. multirx.FanOut gives each event to it and to the service of the consumer.
+func (p *Process) Active() bool                                            { return p.showSpots }
+func (p *Process) ChannelCreated(core.Channel[int])                        {}
+func (p *Process) ChannelStateChanged(core.Channel[int])                   {}
+func (p *Process) ChannelQualityChanged(core.Channel[int])                 {}
+func (p *Process) ChannelCharacterReceived(core.Channel[int], rune, int64) {}
+
 func (p *Process) ChannelDestroyed(channel core.Channel[int]) {
 	callsign := p.callsigns[channel.ID]
 	delete(p.callsigns, channel.ID)
@@ -388,56 +411,4 @@ func (l *tciListener) IQData(trx int, rate tci.IQSampleRate, data []float32) {
 	}
 
 	l.process.IQData(trx, int(rate), data)
-}
-
-/* the listener of one pipeline */
-
-// trxListener takes the events of the pipeline of one receiver. It gives each event to the channel
-// service and to the process.
-//
-// **It puts the number of the receiver in front of the id of each channel.** Each pipeline counts
-// its channels from 1, so two receivers give the same id to two different stations. The id is the
-// value with which a consumer holds a channel apart from each other channel, and the panorama of
-// the TCI device uses it as well.
-//
-// The prefix comes only with allTRX: with one receiver there is nothing to hold apart, and the id
-// then stays the id that each other source of SDRainer gives.
-type trxListener struct {
-	trx     int
-	allTRX  bool
-	process *Process
-	next    ChannelService
-}
-
-func (l *trxListener) withTRX(channel core.Channel[int]) core.Channel[int] {
-	if !l.allTRX {
-		return channel
-	}
-
-	channel.ID = core.ChannelID(fmt.Sprintf("%d-%s", l.trx, channel.ID))
-	return channel
-}
-
-func (l *trxListener) ChannelCreated(channel core.Channel[int]) {
-	l.next.ChannelCreated(l.withTRX(channel))
-}
-
-func (l *trxListener) ChannelDestroyed(channel core.Channel[int]) {
-	channel = l.withTRX(channel)
-	l.next.ChannelDestroyed(channel)
-	l.process.ChannelDestroyed(channel)
-}
-
-func (l *trxListener) ChannelStateChanged(channel core.Channel[int]) {
-	l.next.ChannelStateChanged(l.withTRX(channel))
-}
-
-func (l *trxListener) ChannelCharacterReceived(channel core.Channel[int], character rune, offset int64) {
-	l.next.ChannelCharacterReceived(l.withTRX(channel), character, offset)
-}
-
-func (l *trxListener) ChannelRunningCallsignDetected(channel core.Channel[int]) {
-	channel = l.withTRX(channel)
-	l.next.ChannelRunningCallsignDetected(channel)
-	l.process.ChannelRunningCallsignDetected(channel)
 }

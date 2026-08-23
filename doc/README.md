@@ -33,6 +33,8 @@ three purposes:
   same time. It is theory and it is not a description of the code. The
   architecture document holds what the code does.
 - [Glossary](./glossary.md) — the terms of DSP and of CW.
+- [Plan: the `hpsdr` command](./hpsdr_plan.md) — openHPSDR protocol 1 for the
+  original devices and for the Hermes-Lite 2, with one receiver for each band.
 - [Concept: the quality tag of a spot](./spot_quality_concept.md) — the CT1BOH
   tags of AR-Cluster 6, and how one skimmer can give that answer from its own
   evidence.

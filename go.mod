@@ -7,6 +7,7 @@ require (
 	github.com/ftl/hamradio v0.2.9
 	github.com/ftl/tci v0.3.2
 	github.com/gorilla/websocket v1.5.1
+	github.com/jancona/hpsdr v0.12.0
 	github.com/mjibson/go-dsp v0.0.0-20180508042940-11479a337f12
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4

@@ -68,6 +68,7 @@ sdrainer <command> [flags]
 |---|---|
 | `tci` | takes the IQ stream of a TCI device and decodes it |
 | `kiwi` | takes the IQ stream of a KiwiSDR and decodes it |
+| `hpsdr` | takes the IQ streams of an openHPSDR device and decodes them |
 | `demo` | makes an IQ stream of 6 signals itself and decodes it |
 | `replay` | takes a recorded IQ stream from a file and decodes it |
 | `listen` | makes an audio file of one signal of a recorded IQ stream |
@@ -97,6 +98,10 @@ panorama of the TCI device), `--trace-tci` (hidden).
 
 **The flags of `kiwi`:** `--host` (default `localhost:8073`), `--username`,
 `--password`, `--center` (the center frequency), `--threshold`.
+
+**The flags of `hpsdr`:** `--host` (the address of the device, empty looks for
+one on the local network), `--center` (one frequency for each receiver, separated
+by a comma), `--sample-rate` (48000, 96000 or 192000), `--threshold`.
 
 **The flags of `demo`:** `--center`, `--noise`.
 
@@ -253,7 +258,8 @@ flowchart TD
 | `pipeline` | the stages of the processing, and the configuration of them |
 | `pipeline/generator` | an IQ stream of CW signals that a test makes itself |
 | `cw` | the demodulator of the keying and the decoder of the Morse code |
-| `tci`, `kiwi` | the clients of the two SDRs |
+| `tci`, `kiwi`, `hpsdr` | the clients of the three SDRs |
+| `multirx` | the rules of a source that runs more than one receiver |
 | `demo`, `replay`, `listen`, `prepare` | the four commands that need no SDR |
 | `iq` | recording of IQ streams into files: a writer and a reader |
 | `cluster` | the telnet server of the DX cluster |
@@ -1116,6 +1122,9 @@ destroyed.
 
 #### One pipeline for each receiver
 
+The package `multirx` holds the rules of a source that runs more than one
+receiver, and `tci --all-trx` and `hpsdr` both use them.
+
 A TCI device holds more than one receiver, and each of them gives its own IQ
 stream on its own frequency. With `--all-trx` the command runs one pipeline for
 each of them.
@@ -1163,7 +1172,55 @@ noise at the edges. The noise floor is a median over 43 bins, so 504 Hz, so a
 bin in the middle of the filtered region gets a very low floor, and the skirt of
 the filter then stands above the threshold.
 
-### 8.3 `demo`
+### 8.3 `hpsdr`
+
+A device that speaks the openHPSDR protocol 1 gives more than one receiver, and
+each of them has its own frequency inside the same band of the ADC. `--center`
+names one frequency for each receiver, and the command then runs one pipeline for
+each of them.
+
+**The original devices and the Hermes-Lite 2 speak the same protocol.** The
+Hermes-Lite 2 adds a few values of its own, and the count of the receivers is the
+only difference that matters here: it uses 4 bits where the original uses 3, and
+the two agree for 8 receivers and less.
+
+**The library [github.com/jancona/hpsdr](https://github.com/jancona/hpsdr) speaks
+the protocol.** It holds the discovery, the session, the sequence numbers and the
+command and control bytes, and it gives one callback for each receiver. It
+transmits nothing, and SDRainer transmits nothing.
+
+> **Decision: a library and not our own client.** The protocol is from 2013 and
+> it does not move, and the library is 1250 lines that another project already
+> tested against real hardware. Its licence is Apache 2.0, which an MIT project
+> may use, and section 4 of that licence asks that the notice of the library goes
+> with each distribution. The file NOTICE in the root of the repository holds it.
+
+**The sample rate holds for each receiver of one device**, and it is 48, 96 or
+192 kHz. The device also gives 384 kHz, and no measurement of SDRainer covers
+that rate, so the command does not offer it.
+
+**One goroutine of the library gives the samples of each receiver**, one receiver
+after the other. `Pipeline.IQData` needs exactly that: it is not safe for two
+callers at the same time. The other side of it is that a pipeline that waits
+holds the samples of each other receiver back.
+
+**The command sends an empty stream to the device without a pause**, one packet
+for each 126 samples at 48 kHz, thus approximately 380 packets for each second.
+The device needs it for two reasons:
+
+- **Its watchdog stops the IQ stream** when no packet of the PC arrives. A
+  measurement with a Hermes-Lite 2 shows it: without that stream the device sent
+  its samples for approximately 10 s and then no more.
+- **The command and control bytes ride in those packets**, one address with each
+  packet, one after the other. The start of the device sends the sample rate, the
+  count of the receivers and the frequency of the **first** receiver, and each
+  further receiver gets its frequency only from this stream.
+
+The samples of that stream are empty, because SDRainer transmits nothing. The
+rate of 48 kHz holds whatever the rate of the receivers is: the microphone and
+the transmitter of the protocol always run at that rate.
+
+### 8.4 `demo`
 
 The demo makes its own IQ stream with 6 signals: 5 CW stations of different
 speed, level, fading and drift, and one carrier that must give no channel. It
@@ -1171,7 +1228,7 @@ gives the chunks with the timing of a real SDR, so 2048 samples each 42.7 ms.
 
 The demo needs no SDR, so it is the way to see the program work.
 
-### 8.4 `replay`
+### 8.5 `replay`
 
 `replay` reads a recording and gives it to the pipeline. Without `--realtime` it
 runs as fast as the machine allows: 34.8 s of a 12 kHz recording need 0.29 s,

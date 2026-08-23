@@ -25,7 +25,7 @@ Use `sdrainer --help` or `sdrainer <cmd> --help` to find out more information ab
 ## Planned Features
 
 - send spotted callsigns to a dx cluster
-- add support for other SDR devices (KiwiSDR, OpenHDSDR, RTL-SDR)
+- add support for other SDR devices (RTL-SDR)
 - add support for other digital modes (PSK31, RTTY)
 
 ## License
@@ -33,3 +33,6 @@ Use `sdrainer --help` or `sdrainer <cmd> --help` to find out more information ab
 This software is published under the [MIT License](https://www.tldrlegal.com/l/mit).
 
 Copyright [Florian Thienel](http://thecodingflow.com/)
+
+It uses third party components with their own licenses, see the file
+[NOTICE](./NOTICE).
