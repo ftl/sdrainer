@@ -10,17 +10,17 @@ Combine a pasta strainer with a **S**oftware **D**efined **R**adio and you get a
 
 ## Usage
 
-Decode a CW signal at the VFO A frequency of a TCI device:
+Detect and collect callsigns from a TCI device's IQ stream on the default host (`localhost:40001`):
 ```
-sdrainer decode tci
-```
-
-Detect and collect callsigns from a TCI device's IQ stream:
-```
-sdrainer strain tci
+sdrainer tci --cluster --show-spots
 ```
 
-Use `sdrainer --help` or `sdrainer <cmd> <sub-cmd> --help` to find out more information about the supported parameters for each command and sub-command.
+Detect and collect callsigns from a KiwiSDR's IQ stream:
+```
+sdrainer kiwi --host=some.kiwi.host.net:8073 --cluster
+```
+
+Use `sdrainer --help` or `sdrainer <cmd> --help` to find out more information about the supported parameters for each command and sub-command.
 
 ## Planned Features
 
