@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"log"
 
+	"github.com/ftl/sdrainer/core"
+	"github.com/ftl/sdrainer/iq"
 	"github.com/ftl/sdrainer/kiwi"
-	"github.com/ftl/sdrainer/scope"
-	"github.com/ftl/sdrainer/telnet"
+	"github.com/ftl/sdrainer/pipeline"
 	"github.com/spf13/cobra"
 )
 
@@ -16,47 +16,33 @@ var kiwiFlags = struct {
 	username        string
 	password        string
 	centerFrequency float64
-	rxFrequency     float64
-	bandwidth       int
-	threshold       int
+	threshold       float64
 }{}
 
-var strainKiwiCmd = &cobra.Command{
+var kiwiCmd = &cobra.Command{
 	Use:   "kiwi",
 	Short: "EXPERIMENTAL: detect and decode CW signals from a KiwiSDR IQ stream",
-	Run:   runWithCtx(runStrainKiwi),
+	Run:   runPipeline(runKiwi),
 }
 
 func init() {
-	strainCmd.AddCommand(strainKiwiCmd)
+	rootCmd.AddCommand(kiwiCmd)
 
-	strainKiwiCmd.Flags().StringVar(&kiwiFlags.host, "host", "localhost:8073", "the KiwiSDR host and port")
-	strainKiwiCmd.Flags().StringVar(&kiwiFlags.username, "username", "", "the KiwiSDR username")
-	strainKiwiCmd.Flags().StringVar(&kiwiFlags.password, "password", "", "the KiwiSDR password")
-	strainKiwiCmd.Flags().Float64Var(&kiwiFlags.centerFrequency, "center", 7_020_000, "the center frequency")
-	strainKiwiCmd.Flags().Float64Var(&kiwiFlags.rxFrequency, "rx", 0, "the rx frequency")
-	strainKiwiCmd.Flags().IntVar(&kiwiFlags.bandwidth, "bandwidth", 10_000, "the bandwidth that is observed to find CW signals (max 12000)")
+	kiwiCmd.Flags().StringVar(&kiwiFlags.host, "host", "localhost:8073", "the KiwiSDR host and port")
+	kiwiCmd.Flags().StringVar(&kiwiFlags.username, "username", "", "the KiwiSDR username")
+	kiwiCmd.Flags().StringVar(&kiwiFlags.password, "password", "", "the KiwiSDR password")
+	kiwiCmd.Flags().Float64Var(&kiwiFlags.centerFrequency, "center", 7_020_000, "the center frequency")
+	kiwiCmd.Flags().Float64Var(&kiwiFlags.threshold, "threshold", pipeline.DefaultPeakThreshold, "the level above the noise floor that makes a peak, in dB")
 }
 
-func runStrainKiwi(ctx context.Context, scope scope.Scope, cmd *cobra.Command, args []string) {
-	spotter, err := telnet.NewServer(fmt.Sprintf(":%d", strainFlags.telnetPort), strainFlags.telnetCall, formatVersion())
+func runKiwi(ctx context.Context, scope core.ScopeService, channelService kiwi.ChannelService, spotter kiwi.Spotter, recorder *iq.Writer, cmd *cobra.Command, args []string) {
+	process, err := kiwi.New(kiwiFlags.host, kiwiFlags.username, kiwiFlags.password,
+		kiwiFlags.centerFrequency, kiwiFlags.threshold,
+		scope, channelService, spotter, recorder)
 	if err != nil {
 		log.Fatal(err)
 	}
-	spotter.SetSilencePeriod(strainFlags.spotSilencePeriod)
-
-	process, err := kiwi.New(kiwiFlags.host, kiwiFlags.username, kiwiFlags.password, kiwiFlags.centerFrequency, kiwiFlags.bandwidth, spotter)
-	if err != nil {
-		log.Fatal(err)
-	}
-	process.SetThreshold(kiwiFlags.threshold)
-	process.SetSignalDebounce(strainFlags.debounce)
-	process.SetSilenceTimeout(strainFlags.silenceTimeout)
-	process.SetAttachmentTimeout(strainFlags.attachmentTimeout)
-	process.SetRXFrequency(kiwiFlags.rxFrequency)
-	process.SetScope(scope)
 
 	<-ctx.Done()
 	process.Close()
-	spotter.Stop()
 }

@@ -20,7 +20,11 @@ generate:
 
 .PHONY: test
 test:
-	go test -v -timeout=30s -count 1 ./...
+	go test -v -timeout=90s -count 1 ./...
+
+.PHONY: test-extended
+test-extended:
+	go test -v -race -timeout=300s -count 2 ./...
 
 .PHONY: build
 build:

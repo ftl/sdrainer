@@ -24,21 +24,20 @@ three purposes:
 
 ## Documents
 
-- [Architecture Overview](./architecture_overview.md) — package map, the two
-  decode pipelines (audio and spectral/IQ), and the main data flow. Initial
-  draft, to be developed.
-- [Research: CW Multi-Signal Decode Pipeline](./research_pipeline.md) — general,
-  language-agnostic design for finding and decoding many CW signals in parallel
-  from an IQ stream. Theory and parameter values, not a description of the
-  current code.
-- [Glossary](./glossary.md) — DSP and CW terms.
+- **[The Architecture of SDRainer](./architecture.md) — start here.** One
+  document that holds the purpose of the application, each interface, each
+  component, each decision, and each way that we tried and did not keep. It
+  points to no other document.
+- [Research: CW Multi-Signal Decode Pipeline](./research_pipeline.md) — the
+  general design of a pipeline that finds and decodes many CW signals at the
+  same time. It is theory and it is not a description of the code. The
+  architecture document holds what the code does.
+- [Glossary](./glossary.md) — the terms of DSP and of CW.
+- [Concept: the quality tag of a spot](./spot_quality_concept.md) — the CT1BOH
+  tags of AR-Cluster 6, and how one skimmer can give that answer from its own
+  evidence.
 
-Planned / to be added as the work progresses:
 
-- Per-package deep dives (`dsp`, `cw`, `rx`).
-- Theoretical foundations: the Goertzel algorithm, FFT/PSD spectrum estimation,
-  peak detection and tracking, the CW decoder's timing model.
-- Architecture decisions and the stabilization roadmap.
 
 ## Conventions
 

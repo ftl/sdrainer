@@ -25,7 +25,7 @@ Use `sdrainer --help` or `sdrainer <cmd> <sub-cmd> --help` to find out more info
 ## Planned Features
 
 - send spotted callsigns to a dx cluster
-- add support for other SDR devices (KiwiSDR, OpenHDSDR, RTL-SDR, Icom RS-BA1)
+- add support for other SDR devices (KiwiSDR, OpenHDSDR, RTL-SDR)
 - add support for other digital modes (PSK31, RTTY)
 
 ## License

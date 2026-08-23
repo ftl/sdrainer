@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -322,6 +323,154 @@ func mixWithNoise(out []float32, amplitude float64) {
 		}
 		out[i] = float32(math.Max(math.Min(1.0, float64(out[i]+noise)), -1.0))
 	}
+}
+
+func TestRollingVariance(t *testing.T) {
+	const windowSize = 4
+	values := []float64{1, 2, 3, 4, 5, 100, 7, 8, 9, 10, 11, 12}
+
+	v := NewRollingVariance[float64](windowSize)
+	for i, value := range values {
+		actual := v.Put(value)
+
+		if i < windowSize-1 {
+			continue
+		}
+		expected := populationVariance(values[i-windowSize+1 : i+1])
+		assert.InDeltaf(t, expected, actual, 1e-9, "variance after value %d", i)
+	}
+}
+
+func TestRollingMeanBeforeTheWindowIsFull(t *testing.T) {
+	m := NewRollingMean[float64](4)
+
+	assert.InDelta(t, 10, m.Put(10), 1e-9, "one value is its own mean")
+	assert.InDelta(t, 15, m.Put(20), 1e-9, "mean of 10 and 20")
+	assert.InDelta(t, 20, m.Put(30), 1e-9, "mean of 10, 20 and 30")
+	assert.InDelta(t, 25, m.Put(40), 1e-9, "the window is full")
+	assert.InDelta(t, 35, m.Put(50), 1e-9, "the oldest value is gone")
+}
+
+func TestRollingVarianceBeforeTheWindowIsFull(t *testing.T) {
+	v := NewRollingVariance[float64](4)
+
+	assert.InDelta(t, 0, v.Put(10), 1e-9, "one value has no variance")
+	assert.InDelta(t, populationVariance([]float64{10, 20}), v.Put(20), 1e-9)
+	assert.InDelta(t, populationVariance([]float64{10, 20, 30}), v.Put(30), 1e-9)
+	assert.InDelta(t, populationVariance([]float64{10, 20, 30, 40}), v.Put(40), 1e-9)
+}
+
+func TestRollingWindowWithAnUnusableSize(t *testing.T) {
+	assert.NotPanics(t, func() {
+		m := NewRollingMean[float64](0)
+		m.Put(1)
+		m.Reset()
+	}, "rolling mean")
+
+	assert.NotPanics(t, func() {
+		v := NewRollingVariance[float64](0)
+		v.Put(1)
+		v.Reset()
+	}, "rolling variance")
+}
+
+func TestRollingVarianceReset(t *testing.T) {
+	v := NewRollingVariance[float64](4)
+	for _, value := range []float64{1, 2, 3, 4} {
+		v.Put(value)
+	}
+
+	v.Reset()
+	for _, value := range []float64{5, 5, 5, 5} {
+		v.Put(value)
+	}
+
+	assert.InDelta(t, 0, v.Get(), 1e-9, "constant values have no variance")
+}
+
+func populationVariance(values []float64) float64 {
+	var mean float64
+	for _, value := range values {
+		mean += value
+	}
+	mean /= float64(len(values))
+
+	var sum float64
+	for _, value := range values {
+		sum += (value - mean) * (value - mean)
+	}
+	return sum / float64(len(values))
+}
+
+func TestCalculateBlocksize(t *testing.T) {
+	tt := []struct {
+		desc           string
+		pitch          float64
+		sampleRate     int
+		blocksizeRatio float64
+	}{
+		{desc: "700 Hz at 48 kHz", pitch: 700, sampleRate: 48000, blocksizeRatio: DefaultBlocksizeRatio},
+		{desc: "700 Hz at 8 kHz", pitch: 700, sampleRate: 8000, blocksizeRatio: DefaultBlocksizeRatio},
+		{desc: "a short block", pitch: 3000, sampleRate: 8000, blocksizeRatio: 0.001},
+		{desc: "a very short block", pitch: 3900, sampleRate: 8000, blocksizeRatio: 0.0001},
+		{desc: "a pitch above the sample rate", pitch: 96000, sampleRate: 48000, blocksizeRatio: 0.005},
+	}
+	for _, tc := range tt {
+		t.Run(tc.desc, func(t *testing.T) {
+			blocksize := calculateBlocksize(tc.pitch, tc.sampleRate, tc.blocksizeRatio)
+
+			assert.GreaterOrEqual(t, blocksize, 1, "the block size must be usable")
+
+			g := NewGoertzel(tc.pitch, tc.sampleRate, tc.blocksizeRatio)
+			assert.False(t, math.IsNaN(g.coeff), "the coefficient must not be NaN")
+			assert.Greater(t, g.Tick(), time.Duration(0), "one block must take time")
+		})
+	}
+}
+
+func TestRollingHistoryIndexOutsideTheLimits(t *testing.T) {
+	h := NewRollingHistory[int](4)
+	for _, value := range []int{1, 2, 3, 4} {
+		h.Put(value)
+	}
+
+	assert.Equal(t, 4, h.Get(1), "index 1 is the last value")
+	assert.Equal(t, 1, h.Get(4), "index 4 is the oldest value")
+	assert.Equal(t, 4, h.Get(0), "an index below the limit gives the last value")
+	assert.Equal(t, 4, h.Get(-3), "a negative index gives the last value")
+	assert.Equal(t, 1, h.Get(5), "an index above the limit gives the oldest value")
+	assert.Equal(t, 1, h.Get(100), "an index far above the limit gives the oldest value")
+}
+
+func TestRollingHistoryWithTooManyValues(t *testing.T) {
+	h := NewRollingHistory[int](4)
+	for _, value := range []int{1, 2, 3, 4} {
+		h.Put(value)
+	}
+
+	assert.Equal(t, 10, h.Sum(100), "the sum uses the available values only")
+	assert.Equal(t, 2, h.Mean(100), "the mean divides by the available values only")
+	assert.Equal(t, 4, h.Max(100), "maximum")
+	assert.Equal(t, 1, h.Min(100), "minimum")
+	assert.InDelta(t, populationVariance([]float64{1, 2, 3, 4}), h.Variance(100), 1e-9, "variance")
+}
+
+func TestRollingHistoryDoesNotPanic(t *testing.T) {
+	assert.NotPanics(t, func() {
+		h := NewRollingHistory[int](0)
+		h.Put(1)
+		h.Get(7)
+		h.Sum(7)
+		h.Max(7)
+		h.Min(7)
+		h.Mean(7)
+		h.Variance(7)
+		h.SDev(7)
+		h.SumAt()
+		h.MaxAt()
+		h.MinAt()
+		h.Reset()
+	})
 }
 
 func TestValueHistory_RingIndex(t *testing.T) {

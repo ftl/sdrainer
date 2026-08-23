@@ -71,7 +71,12 @@ func NewGoertzel(pitch float64, sampleRate int, blocksizeRatio float64) *Goertze
 
 func calculateBlocksize(pitch float64, sampleRate int, blocksizeRatio float64) int {
 	minBlocksize := math.Round(float64(sampleRate) / pitch)
-	return int(math.Round((blocksizeRatio*float64(sampleRate))/minBlocksize)) * int(minBlocksize)
+	if minBlocksize < 1 {
+		minBlocksize = 1
+	}
+
+	periods := int(math.Round((blocksizeRatio * float64(sampleRate)) / minBlocksize))
+	return max(1, periods) * int(minBlocksize)
 }
 
 // SetMagnitudeThreshold sets the magnitude threshold.
@@ -111,7 +116,7 @@ func (f *Goertzel) Magnitude(block FilterBlock) float64 {
 func (f *Goertzel) NormalizedMagnitude(block FilterBlock) float64 {
 	magnitude := f.Magnitude(block)
 
-	// moving average filter
+	// exponential filter, the time constant is 6 blocks
 	if magnitude > f.magnitudeLimitLow {
 		f.magnitudeLimit = (f.magnitudeLimit + ((magnitude - f.magnitudeLimit) / 6))
 	}
@@ -184,36 +189,40 @@ func (d *BoolDebouncer) Debounce(rawState bool) bool {
 // RollingVariance calculates the variance over n values.
 type RollingVariance[T Number] struct {
 	values []T
-	n      T
 	next   int
+	count  int
 
-	sumForMean     T
-	mean           T
-	sumForVariance T
-	variance       T
+	sum          T
+	sumOfSquares T
+	mean         T
+	variance     T
 }
 
 // NewRollingVariance with size n.
 func NewRollingVariance[T Number](n int) *RollingVariance[T] {
+	if n < 1 {
+		n = 1
+	}
 	return &RollingVariance[T]{
 		values: make([]T, n),
-		n:      T(n),
 	}
 }
 
 // Put a new value into the rolling window and get the new variance back.
 func (v *RollingVariance[T]) Put(value T) T {
-	v.sumForMean -= v.values[v.next]
-	oldSummand := (v.values[v.next] - v.mean)
-	v.sumForVariance -= oldSummand * oldSummand
+	old := v.values[v.next]
+	v.sum -= old
+	v.sumOfSquares -= old * old
 
 	v.values[v.next] = value
+	v.sum += value
+	v.sumOfSquares += value * value
+	if v.count < len(v.values) {
+		v.count++
+	}
 
-	v.sumForMean += v.values[v.next]
-	v.mean = v.sumForMean / v.n
-	newSummand := (v.values[v.next] - v.mean)
-	v.sumForVariance += newSummand * newSummand
-	v.variance = v.sumForVariance / v.n
+	v.mean = v.sum / T(v.count)
+	v.variance = v.sumOfSquares/T(v.count) - v.mean*v.mean
 
 	v.next = (v.next + 1) % len(v.values)
 
@@ -229,17 +238,18 @@ func (v *RollingVariance[T]) Get() T {
 func (v *RollingVariance[T]) Reset() {
 	clear(v.values)
 	v.next = 0
-	v.sumForMean = 0
+	v.count = 0
+	v.sum = 0
+	v.sumOfSquares = 0
 	v.mean = 0
-	v.sumForVariance = 0
 	v.variance = 0
 }
 
 // RollingMean calculates the mean over n values.
 type RollingMean[T Number] struct {
 	values []T
-	n      T
 	next   int
+	count  int
 
 	sumForMean T
 	mean       T
@@ -247,9 +257,11 @@ type RollingMean[T Number] struct {
 
 // NewRollingMean with size n.
 func NewRollingMean[T Number](n int) *RollingMean[T] {
+	if n < 1 {
+		n = 1
+	}
 	return &RollingMean[T]{
 		values: make([]T, n),
-		n:      T(n),
 	}
 }
 
@@ -259,8 +271,11 @@ func (v *RollingMean[T]) Put(value T) T {
 
 	v.values[v.next] = value
 
-	v.sumForMean += v.values[v.next]
-	v.mean = v.sumForMean / v.n
+	v.sumForMean += value
+	if v.count < len(v.values) {
+		v.count++
+	}
+	v.mean = v.sumForMean / T(v.count)
 
 	v.next = (v.next + 1) % len(v.values)
 
@@ -276,6 +291,7 @@ func (v *RollingMean[T]) Get() T {
 func (v *RollingMean[T]) Reset() {
 	clear(v.values)
 	v.next = 0
+	v.count = 0
 	v.sumForMean = 0
 	v.mean = 0
 }
@@ -289,28 +305,33 @@ type RollingHistory[T Number] struct {
 
 // NewRollingHistory returns a new RollingHistory of the given length.
 func NewRollingHistory[T Number](length int) *RollingHistory[T] {
+	if length < 1 {
+		length = 1
+	}
 	return &RollingHistory[T]{
 		ring:   make([]T, length),
 		length: length,
-		next:   0,
 	}
 }
 
+// ringIndex maps the given age in Put calls to a position in the ring. The index 1 is the value of
+// the last Put call, the index length is the oldest available value. An index outside these limits
+// is moved to the nearest limit.
 func (h *RollingHistory[T]) ringIndex(index int) int {
-	if index > h.length {
-		panic(fmt.Sprintf("index %d is greater then the available history length of %d", index, h.length))
-	}
+	index = max(1, min(index, h.length))
 	return (h.next - index + h.length) % h.length
 }
 
 func (h *RollingHistory[T]) forEach(sliceLength int, f func(value T)) {
-	if sliceLength > h.length {
-		panic(fmt.Sprintf("history length of %d exceeded: %d", h.length, sliceLength))
-	}
+	sliceLength = min(sliceLength, h.length)
 	for i := 1; i <= sliceLength; i++ {
 		value := h.ring[h.ringIndex(i)]
 		f(value)
 	}
+}
+
+func (h *RollingHistory[T]) clampLength(n int) int {
+	return max(1, min(n, h.length))
 }
 
 // Reset the rolling history.
@@ -372,6 +393,9 @@ func (h *RollingHistory[T]) SumAt(indexes ...int) T {
 
 // MaxAt returns the maximum of the values at the given indexes.
 func (h *RollingHistory[T]) MaxAt(indexes ...int) T {
+	if len(indexes) == 0 {
+		return 0
+	}
 	max := h.Get(indexes[0])
 	for _, index := range indexes {
 		value := h.Get(index)
@@ -384,6 +408,9 @@ func (h *RollingHistory[T]) MaxAt(indexes ...int) T {
 
 // MinAt returns the minimum of the values at the given indexes.
 func (h *RollingHistory[T]) MinAt(indexes ...int) T {
+	if len(indexes) == 0 {
+		return 0
+	}
 	min := h.Get(indexes[0])
 	for _, index := range indexes {
 		value := h.Get(index)
@@ -396,16 +423,19 @@ func (h *RollingHistory[T]) MinAt(indexes ...int) T {
 
 // Mean of the last n values.
 func (h *RollingHistory[T]) Mean(n int) T {
+	n = h.clampLength(n)
 	sum := h.Sum(n)
 	return T(float64(sum) / float64(n))
 }
 
 // Variance of the last n values.
 func (h *RollingHistory[T]) Variance(n int) float64 {
+	n = h.clampLength(n)
 	mean := float64(h.Sum(n)) / float64(n)
 	var sum float64
 	h.forEach(n, func(value T) {
-		sum += math.Pow(float64(value)-mean, 2)
+		deviation := float64(value) - mean
+		sum += deviation * deviation
 	})
 	return sum / float64(n)
 }

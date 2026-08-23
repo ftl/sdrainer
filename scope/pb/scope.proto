@@ -4,11 +4,7 @@ package pb;
 
 import "google/protobuf/timestamp.proto";
 
-message TimeFrame {
-    string stream_id = 1;
-    google.protobuf.Timestamp timestamp = 2;
-    map<string, float> values = 3;
-}
+option go_package = "scope/pb";
 
 message SpectralFrame {
     string stream_id = 1;
@@ -20,15 +16,77 @@ message SpectralFrame {
     map<string, float> magnitude_markers = 7;
 }
 
-message Frame {
-    oneof frame {
-        TimeFrame time_frame = 1;
-        SpectralFrame spectral_frame = 2;
+message TimeFrame {
+    string stream_id = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    map<string, float> values = 3;
+}
+
+message ScopeEvent{
+    oneof event {
+        SpectralFrame spectral_frame = 1;
+        TimeFrame time_frame = 2;
     }
 }
 
-message GetScopeRequest {}
+message GetScopeEventsRequest {}
 
-service Scope {
-    rpc GetFrames (GetScopeRequest) returns (stream Frame) {}
+service ScopeService {
+    rpc GetScopeEvents (GetScopeEventsRequest) returns (stream ScopeEvent) {}
+}
+
+enum ChannelState {
+    CHANNEL_STATE_NEW = 0;
+    CHANNEL_STATE_CONFIRMED = 1;
+    CHANNEL_STATE_ACTIVE = 2;
+    CHANNEL_STATE_IDLE = 3;
+    CHANNEL_STATE_DEAD = 4;
+}
+
+message Channel {
+    string id = 1;
+    float frequency = 2;
+    int32 wpm = 3;
+    float snr = 4;
+    ChannelState state = 5;
+    string callsign = 6;
+}
+
+message ChannelCreated {
+    Channel channel = 1;
+}
+
+message ChannelDestroyed {
+    Channel channel = 1;
+}
+
+message ChannelStateChanged {
+    Channel channel = 1;
+}
+
+message ChannelCharacterReceived {
+    Channel channel = 1;
+    string character = 2;
+    int64 offset = 3;
+}
+
+
+message ChannelRunningCallsignDetected {
+    Channel channel = 1;
+}
+
+message ChannelEvent{
+    oneof event {
+        ChannelCreated channel_created = 1;
+        ChannelDestroyed channel_destroyed = 2;
+        ChannelStateChanged channel_state_changed = 3;
+        ChannelCharacterReceived channel_character_received = 4;
+        ChannelRunningCallsignDetected channel_running_callsign_detected = 5;
+    }
+}
+
+message GetChannelEventsRequest {}
+
+service ChannelService {
+    rpc GetChannelEvents (GetChannelEventsRequest) returns (stream ChannelEvent) {}
 }

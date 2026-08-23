@@ -102,6 +102,53 @@ both types: the CIC makes the large rate reduction, and one short FIR gives the
 final channel shape. Refer to the per-signal extraction stage in
 [Research: CW Multi-Signal Decode Pipeline](./research_pipeline.md).
 
+## NCO — Numerically Controlled Oscillator
+
+An NCO is an oscillator in software. It gives the sine and the cosine of one
+frequency, one value for each sample. It needs no table of values and no filter.
+
+An NCO holds one value: the **phase**. Each sample adds a constant step to that
+phase:
+
+```
+step  = 2π · frequency / sample_rate
+phase = phase + step
+```
+
+The sine and the cosine of the phase give the two parts of the oscillator. Keep
+the phase inside one turn, between 0 and 2π. A phase that increases without
+a limit loses precision after some minutes of a stream.
+
+### The NCO moves a signal
+
+This is the usual work of an NCO. Multiply each complex sample by the value of
+the oscillator. The signal then moves by the frequency of the oscillator:
+
+```
+I_out = I · cos(phase) − Q · sin(phase)
+Q_out = I · sin(phase) + Q · cos(phase)
+```
+
+A **negative** frequency moves a signal down. A signal at +1000 Hz that you
+multiply with an NCO at −1000 Hz lies at 0 Hz after the multiplication. A
+**positive** frequency moves the signal up.
+
+The multiplication changes no level. The value of the oscillator has the length
+1, so the multiplication turns each sample and it does not make it larger or
+smaller.
+
+### Where SDRainer uses it
+
+The `listen` command takes one signal out of a recording with two oscillators:
+
+1. An NCO at the negative offset of the signal moves that signal to 0 Hz.
+2. A lowpass filter removes each other signal.
+3. An NCO at the pitch of a tone moves the signal from 0 Hz to a frequency that
+   an ear hears.
+
+The generator of the test signals uses the same phase accumulator to put each
+CW signal on its frequency.
+
 ## MFCC — Mel-Frequency Cepstral Coefficients
 
 The MFCCs are the classic compact feature set for speech recognition. These are
@@ -233,6 +280,49 @@ The SNR controls the signal tracker. If you use only one threshold, a signal nea
 that threshold switches on and off many times. Use two thresholds and hysteresis.
 The higher threshold starts a track at a new frequency. The lower threshold keeps
 a track that exists.
+
+## ACF — Autocorrelation Function
+
+The ACF shows how much a signal is similar to a delayed copy of itself. The delay
+has the name **lag**. The normalized ACF at the lag `k` is:
+
+```
+r(k) = Σ (x[i] − mean) · (x[i+k] − mean) / Σ (x[i] − mean)²
+```
+
+The range of `r(k)` is −1 to +1. A value of +1 shows that the signal repeats
+itself exactly after `k` samples. A value of 0 shows no relation. A value of −1
+shows that the signal is the opposite of itself: the marks of the copy are at the
+position of the spaces of the original. The value at the lag 0 is always 1.
+
+A periodic signal makes a peak at each multiple of its period. Thus the classic
+use of the ACF is a pitch estimate or a period estimate: find the largest peak
+after the lag 0.
+
+The pipeline uses the ACF for a different purpose: it measures the **rate** of
+the keying, and not the period. Refer to the CW discrimination in
+[Research: CW Multi-Signal Decode Pipeline](./research_pipeline.md). The input is
+the envelope of a signal that the tracker follows. It is one bit for each STFT
+frame: the detection stage found a peak, or it did not.
+
+`trackedSignal.minAutocorrelation` in
+[the signal tracker](../pipeline/tracker_stage.go) takes the *smallest*
+value over a range of lags, and not a peak. There are two reasons:
+
+- **CW has no clean period.** The length of the symbols, of the characters and of
+  the words is different. Thus a search for a peak has no stable target.
+- **The smallest value measures the rate.** An envelope that switches faster than
+  the lag range comes out of phase with itself somewhere in the range, so the
+  value goes to 0 or below. An envelope that switches slower, or an envelope that
+  does not switch, stays high at every lag of the range.
+
+The lag range comes from the slowest keying rate that the system accepts. The lag
+is the time of one element at that rate, thus one half of its period.
+
+This is the important difference to the variance of the envelope, or to the duty
+cycle: those measures show *if* a signal switches, but not *how fast*. A carrier
+that switches on and off slowly has the duty cycle of CW, and only the ACF
+removes it.
 
 ## Decodable frequency band
 

@@ -5,8 +5,9 @@
 > text stream for each CW signal it finds. It is a design overview and a
 > theoretical reference, **not** a description of the current SDRainer
 > implementation. Where SDRainer differs, the difference is not marked here yet.
-> Compare against [Architecture Overview](./architecture_overview.md) before you
-> use this document to justify a code change.
+> Compare against [The Architecture of SDRainer](./architecture.md) before you
+> use this document to justify a code change: that document describes the code
+> of today, and this one describes the theory.
 
 Assumed input for all numbers in this document:
 
@@ -115,6 +116,58 @@ Reject a peak with a constant envelope. Reject a peak with a random envelope.
 
 This test removes most false channels. It is the most valuable single filter in
 the pipeline.
+
+#### What the implementation does
+
+`TrackerStage.isCW` in [pipeline/tracker_stage.go](../pipeline/tracker_stage.go)
+uses two of these measures, and a candidate must pass both. The envelope is not
+the magnitude history of the bin, but one bit for each frame: the detection
+stage found a peak, or it did not. The tracker keeps these bits in a ring over
+the CW window.
+
+**The duty cycle** is the part of the frames with a peak. `MaxDutyCycle` is 0.9.
+
+**The autocorrelation** is not a peak at the dot period, as this section
+proposes, but the *smallest* value over the lags from 1 to `MinKeyingRate`. A
+search for a peak needs a clean period, and CW has none: the length of the
+symbols, of the characters and of the words is different. The smallest value
+needs no period. An envelope that switches faster than the lag range comes out
+of phase with itself somewhere in the range, thus the value goes to 0 or below.
+An envelope that switches slower stays high at every lag.
+
+The measurement with the scene of the `test` command gives these values. The
+frames are 21.3 ms and the lag range is 200 ms, thus 9 frames.
+
+| signal | duty cycle | smallest autocorrelation |
+|---|---|---|
+| CW, 6 WPM to 35 WPM | 0.70 to 0.87 | 0.09 and below |
+| a carrier | 1.00 | 1.00 |
+| a carrier that switches with 0.25 Hz | 0.50 | 0.79 |
+| a carrier that switches with 0.5 Hz | 0.50 | 0.62 |
+| a signal that switches with 1 Hz | 0.50 | 0.22 |
+
+The limits are `MaxDutyCycle` 0.9 and `MaxAutocorrelation` 0.4.
+
+Two results are important:
+
+- **The duty cycle of real CW is 0.70 to 0.87, and not the 0.4 of an ideal
+  square.** The window of the STFT is 85 ms and thus longer than one dit, so it
+  smears the gaps of the keying. This is the same limit as in
+  section 3.1 of [The Architecture of SDRainer](./architecture.md). The limit
+  for the duty cycle must therefore stay generous. A low limit removes real CW.
+- **Each measure alone is not sufficient.** A carrier that switches slowly has
+  the duty cycle of CW, and only the autocorrelation removes it. A carrier
+  without gaps has no change in its envelope, and its autocorrelation is 1 at
+  every lag, but the duty cycle removes it first.
+
+**The border of the test.** A signal that switches with 1 Hz passes.
+`MinKeyingRate` is 2.5 Hz and not the 5 Hz of this section, because a slow
+operator sends slower than 5 Hz. A rate of 1 Hz gives elements of 0.5 s, which
+an operator can also key by hand, so the tracker must not remove it.
+
+`TestTrackerUsesTheDutyCycleAndTheAutocorrelation` in
+[pipeline/tracker_stage_test.go](../pipeline/tracker_stage_test.go) shows that
+each measure removes a signal that the other measure accepts.
 
 ## 5. Stage 4 — Signal tracker
 

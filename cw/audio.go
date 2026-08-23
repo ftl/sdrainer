@@ -1,13 +1,12 @@
 package cw
 
 import (
-	"io"
 	"log"
 	"math"
 	"time"
 
+	"github.com/ftl/sdrainer/core"
 	"github.com/ftl/sdrainer/dsp"
-	"github.com/ftl/sdrainer/scope"
 )
 
 const (
@@ -18,6 +17,9 @@ const (
 	defaultMaxScale          = 12
 )
 
+// AudioDemodulator uses a Goertzel filter to extract a CW signal on a certain pitch frequency from an audio stream.
+//
+// This demodulator is currently not used by SDRainer, the code is here just for demonstration purposes.
 type AudioDemodulator struct {
 	filter       *dsp.Goertzel
 	debouncer    *dsp.BoolDebouncer
@@ -31,10 +33,10 @@ type AudioDemodulator struct {
 	close  chan struct{}
 	closed chan struct{}
 
-	scope scope.Scope
+	scope core.ScopeService
 }
 
-func NewAudioDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSize int) *AudioDemodulator {
+func NewAudioDemodulator(sink CharacterSink, pitch float64, sampleRate int, bufferSize int) *AudioDemodulator {
 	if bufferSize == 0 {
 		bufferSize = defaultBufferSize
 	}
@@ -48,9 +50,9 @@ func NewAudioDemodulator(out io.Writer, pitch float64, sampleRate int, bufferSiz
 		op:           make(chan func()),
 		close:        make(chan struct{}),
 		closed:       make(chan struct{}),
-		scope:        scope.NewNullScope(),
+		scope:        &core.NullScopeService{},
 	}
-	result.decoder = NewDecoder(out, sampleRate, result.filter.Blocksize())
+	result.decoder = NewDecoder(sink, sampleRate, result.filter.Blocksize())
 
 	go result.run()
 
@@ -67,7 +69,7 @@ func (d *AudioDemodulator) Close() {
 	}
 }
 
-func (d *AudioDemodulator) SetScope(scope scope.Scope) {
+func (d *AudioDemodulator) SetScope(scope core.ScopeService) {
 	d.do(func() {
 		d.scope = scope
 		d.decoder.SetScope(scope)
@@ -234,12 +236,12 @@ func (d *AudioDemodulator) scopeAudio(magnitudeThreshold float64, magnitude floa
 		debouncedInt = 1
 	}
 
-	d.scope.ShowTimeFrame(&scope.TimeFrame{
-		Frame: scope.Frame{
+	d.scope.SendTimeFrame(&core.TimeFrame{
+		Frame: core.Frame{
 			Stream:    scopeAudio,
 			Timestamp: time.Now(),
 		},
-		Values: map[scope.ChannelID]float64{
+		Values: map[core.ValueID]float64{
 			"magnitude_threshold": magnitudeThreshold * 50,
 			"magnitude":           magnitude * 50,
 			"state":               float64(stateInt) * 30,

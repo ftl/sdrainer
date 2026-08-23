@@ -28,6 +28,13 @@ Resources:
 const (
 	defaultHostname = "localhost"
 	defaultPort     = 8073
+
+	// iqSampleRate is the sample rate of the IQ stream that the client asks for. The KiwiSDR gives
+	// the same value back as audio_rate. The passband of the receiver covers the whole stream: a
+	// narrower passband gives no less data and no less work, and the skirt of the filter stands
+	// above the noise floor at both of its edges and gives false channels there.
+	// doc/architecture.md, section 8.2, holds the measurement.
+	iqSampleRate = 12_000
 )
 
 type kiwiTag string
@@ -89,7 +96,7 @@ type Client struct {
 	closed chan struct{}
 }
 
-func Open(host string, username string, password string, centerFrequency float64, bandwidth int, kiwiHandler KiwiHandler) (*Client, error) {
+func Open(host string, username string, password string, centerFrequency float64, kiwiHandler KiwiHandler) (*Client, error) {
 	client, err := newClient(host, true, kiwiHandler)
 	if err != nil {
 		return nil, err
@@ -106,7 +113,7 @@ func Open(host string, username string, password string, centerFrequency float64
 
 	client.sendAuthentication(username, password)
 	client.sendSetup(
-		"SET AR OK in=12000 out=48000",
+		fmt.Sprintf("SET AR OK in=%d out=48000", iqSampleRate),
 		"SET squelch=0 max=0",
 		"SET lms_autonotch=0",
 		"SET getattn=0",
@@ -115,10 +122,7 @@ func Open(host string, username string, password string, centerFrequency float64
 		"SET compression=0",
 	)
 
-	lowCut := -(bandwidth / 2)
-	highCut := bandwidth / 2
-
-	client.setVFO(iqMode, lowCut, highCut, centerFrequency)
+	client.setVFO(iqMode, -iqSampleRate/2, iqSampleRate/2, centerFrequency)
 
 	return client, nil
 }
@@ -345,7 +349,7 @@ func (c *Client) sendAuthentication(username string, password string) error {
 
 func (c *Client) sendSetup(setup ...string) error {
 	for _, line := range setup {
-		err := c.send(line)
+		err := c.send("%s", line)
 		if err != nil {
 			return err
 		}
