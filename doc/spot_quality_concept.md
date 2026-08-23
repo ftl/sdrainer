@@ -197,9 +197,10 @@ flowchart LR
 | 4 | `pipeline/pipeline.go` | `spotMessage` takes the tag and writes the form of section 4.2. |
 | 5 | `cmd/root.go` | the flag `--spot-quality`. |
 
-**Nothing outside the pipeline changes.** `core.Spotter` takes the comment as a
-string today, and the tag stands in that string. The DX cluster, the gRPC events
-and the TCI markers need no change.
+**The tag also stands in `core.Channel`**, and a change of it gives the event
+`ChannelQualityChanged`. The DX cluster needs no change, because the tag stands
+in the comment of the spot. The gRPC service holds the value as a string, and it
+is empty while a channel gave no callsign.
 
 **The size:** step 1 is approximately 20 lines, step 2 is a move, step 3 is
 approximately 120 lines with its tests, step 4 is 10 lines.

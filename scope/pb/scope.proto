@@ -50,6 +50,8 @@ message Channel {
     float snr = 4;
     ChannelState state = 5;
     string callsign = 6;
+    // the quality tag of the callsign, empty while the channel gave no callsign
+    string quality = 7;
 }
 
 message ChannelCreated {
@@ -75,6 +77,10 @@ message ChannelRunningCallsignDetected {
     Channel channel = 1;
 }
 
+message ChannelQualityChanged {
+    Channel channel = 1;
+}
+
 message ChannelEvent{
     oneof event {
         ChannelCreated channel_created = 1;
@@ -82,6 +88,7 @@ message ChannelEvent{
         ChannelStateChanged channel_state_changed = 3;
         ChannelCharacterReceived channel_character_received = 4;
         ChannelRunningCallsignDetected channel_running_callsign_detected = 5;
+        ChannelQualityChanged channel_quality_changed = 6;
     }
 }
 

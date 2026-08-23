@@ -160,6 +160,14 @@ func (s *ScopeServer[F]) ChannelDestroyed(channel core.Channel[F]) {
 	server.SendChannelDestroyed(&pb.ChannelDestroyed{Channel: toPBChannel(channel)})
 }
 
+func (s *ScopeServer[F]) ChannelQualityChanged(channel core.Channel[F]) {
+	server := s.activeServer()
+	if server == nil {
+		return
+	}
+	server.SendChannelQualityChanged(&pb.ChannelQualityChanged{Channel: toPBChannel(channel)})
+}
+
 func (s *ScopeServer[F]) ChannelStateChanged(channel core.Channel[F]) {
 	server := s.activeServer()
 	if server == nil {
@@ -201,6 +209,7 @@ func toPBChannel[F dsp.Number](channel core.Channel[F]) *pb.Channel {
 		Snr:       float32(channel.SNR),
 		State:     toPBChannelState(channel.State),
 		Callsign:  channel.Callsign.String(),
+		Quality:   channel.Quality.String(),
 	}
 }
 

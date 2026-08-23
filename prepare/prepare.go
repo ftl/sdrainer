@@ -193,6 +193,7 @@ func (c *collector) ChannelCharacterReceived(channel core.Channel[float64], _ ru
 }
 
 func (c *collector) ChannelRunningCallsignDetected(core.Channel[float64]) {}
+func (c *collector) ChannelQualityChanged(core.Channel[float64])          {}
 
 func (c *collector) ChannelDestroyed(channel core.Channel[float64]) {
 	c.mutex.Lock()

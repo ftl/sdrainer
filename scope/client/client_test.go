@@ -69,7 +69,7 @@ func TestChannelEventRoundTrip(t *testing.T) {
 
 	channel := core.Channel[float64]{
 		ID: "3", Frequency: 7020000, WPM: 25, SNR: 17.5, State: core.ActiveChannel,
-		Callsign: callsign.MustParse("DL1ABC"),
+		Callsign: callsign.MustParse("DL1ABC"), Quality: core.ValidQuality,
 	}
 	idleChannel := channel
 	idleChannel.State = core.IdleChannel
@@ -78,6 +78,7 @@ func TestChannelEventRoundTrip(t *testing.T) {
 		ChannelStateChanged{Channel: idleChannel},
 		ChannelCharacterReceived{Channel: channel, Character: 'ü', Offset: 4711},
 		ChannelRunningCallsignDetected{Channel: channel},
+		ChannelQualityChanged{Channel: channel},
 		ChannelDestroyed{Channel: channel},
 	}
 
@@ -99,8 +100,42 @@ func TestChannelEventRoundTrip(t *testing.T) {
 	// a rune of more than one byte proves that the string field of the protobuf keeps it
 	server.ChannelCharacterReceived(channel, 'ü', 4711)
 	server.ChannelRunningCallsignDetected(channel)
+	server.ChannelQualityChanged(channel)
 	server.ChannelDestroyed(channel)
 	eventsReceived.Wait()
 
 	assert.Equal(t, expected, received)
+}
+
+// TestChannelWithoutAQualityRoundTrip covers the channel that gave no callsign: its quality is
+// core.NoQuality, the field of the protobuf is then empty, and the client must give the same value
+// back and not a rune of the value 0 that means something else.
+func TestChannelWithoutAQualityRoundTrip(t *testing.T) {
+	server := scope.NewScopeServer[float64]("localhost:")
+	require.NoError(t, server.Start())
+	time.Sleep(10 * time.Millisecond)
+	defer server.Stop()
+
+	client := NewClient(server.Addr().String())
+	require.NoError(t, client.Open())
+	defer client.Close()
+
+	channel := core.Channel[float64]{ID: "1", Frequency: 7020000, State: core.ActiveChannel}
+
+	received := make(chan any, 1)
+	go func() {
+		events, err := client.GetChannelEvents(context.Background())
+		require.NoError(t, err)
+		received <- <-events
+	}()
+	time.Sleep(100 * time.Millisecond)
+
+	server.ChannelCreated(channel)
+
+	select {
+	case event := <-received:
+		assert.Equal(t, ChannelCreated{Channel: channel}, event)
+	case <-time.After(time.Second):
+		t.Fatal("the event did not arrive")
+	}
 }

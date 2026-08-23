@@ -159,6 +159,7 @@ stream, and a client reads it as long as it wants.
 | `ChannelCharacterReceived` | the channel, one character, and the offset of that character in the stream of IQ samples |
 | | the character is a letter, a digit, a space, `\n` for the end of an over, or U+FFFD for a character that the decoder could not read |
 | `ChannelRunningCallsignDetected` | the channel with the callsign of the running station |
+| `ChannelQualityChanged` | the channel whose quality tag changed |
 | `ChannelDestroyed` | the channel that goes away |
 
 **`ScopeService`** gives the spectral frames and the time frames of the inner
@@ -1227,6 +1228,14 @@ whole MHz.
 Without the band the two frequencies gave a `Q` at each change, and neither of
 them ever became valid again: a measurement with 7 MHz and 14 MHz gave `V`, `Q`,
 `Q`, `Q`.
+
+**The quality stands in `core.Channel`**, so each event of a channel carries it,
+and a change of it gives the event `ChannelQualityChanged`. A consumer that shows
+a list of the channels needs that event: the quality of a channel goes up while
+the receiver reads the callsign again and again.
+
+The gRPC service holds the value as a string, because protobuf has no rune, and
+it is empty while a channel gave no callsign.
 
 **A change of the quality is a new spot.** The callsign stage reports a callsign
 when it finds it, and again when that callsign becomes valid, because the quality

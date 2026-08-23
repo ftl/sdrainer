@@ -148,3 +148,5 @@ func TestProcessUsesTheSampleRateOfTheKiwiSDR(t *testing.T) {
 	assert.InDelta(t, 11.72, derived.BinWidth, 0.01)
 	assert.Equal(t, 10, derived.ConfirmCount)
 }
+
+func (s *testChannelService) ChannelQualityChanged(core.Channel[float64]) {}

@@ -179,10 +179,11 @@ func TestCallsignStageForgetsAChannelThatIsGone(t *testing.T) {
 
 // runningListener collects the events and the spots of a run of the pipeline.
 type runningListener struct {
-	mutex    sync.Mutex
-	detected []core.Channel[float64]
-	spots    []string
-	text     []rune
+	mutex     sync.Mutex
+	detected  []core.Channel[float64]
+	spots     []string
+	text      []rune
+	qualities []core.ChannelQuality
 }
 
 func (l *runningListener) ChannelRunningCallsignDetected(channel core.Channel[float64]) {
@@ -204,6 +205,18 @@ func (l *runningListener) Spot(callsign string, frequency float64, msg string, _
 }
 
 func (l *runningListener) RemoveSpot(string) {}
+
+func (l *runningListener) ChannelQualityChanged(channel core.Channel[float64]) {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	l.qualities = append(l.qualities, channel.Quality)
+}
+
+func (l *runningListener) qualityChanges() []core.ChannelQuality {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+	return slices.Clone(l.qualities)
+}
 
 func (l *runningListener) result() ([]core.Channel[float64], []string, string) {
 	l.mutex.Lock()
@@ -572,4 +585,41 @@ func TestCallsignStageIgnoresAnAnswerBehindATrailingTest(t *testing.T) {
 	for _, found := range detected {
 		assert.NotEqual(t, "DL0XY", found.String(), "the station that answers must get no hit")
 	}
+}
+
+// TestPipelineReportsTheQualityOfAChannel covers the event of the quality: it comes when the
+// quality of a channel changes, and the channel of each event carries that value.
+func TestPipelineReportsTheQualityOfAChannel(t *testing.T) {
+	listener := runRunningStation(t, 40, []generator.CWSignal[float64]{
+		{
+			Frequency: qsoCenter, Text: "cq a1bc a1bc test", WPM: 30, Amplitude: 1.0,
+			RiseTime: 5 * time.Millisecond,
+		},
+	})
+
+	changes := listener.qualityChanges()
+	require.NotEmpty(t, changes, "the quality of the channel must give an event")
+	assert.Equal(t, core.UnverifiedQuality, changes[0], "the first answer is thin")
+	assert.Equal(t, core.ValidQuality, changes[len(changes)-1], "the station repeats its call")
+
+	detected, _, _ := listener.result()
+	require.NotEmpty(t, detected)
+	assert.Equal(t, core.ValidQuality, detected[len(detected)-1].Quality,
+		"the event of the callsign carries the quality of that moment")
+}
+
+// TestPipelineReportsAQualityOnlyWhenItChanges keeps the event quiet: a station that repeats its
+// call gives many hits, and the quality stays at V.
+func TestPipelineReportsAQualityOnlyWhenItChanges(t *testing.T) {
+	listener := runRunningStation(t, 60, []generator.CWSignal[float64]{
+		{
+			Frequency: qsoCenter, Text: "cq a1bc a1bc test", WPM: 30, Amplitude: 1.0,
+			RiseTime: 5 * time.Millisecond,
+		},
+	})
+
+	changes := listener.qualityChanges()
+
+	require.NotEmpty(t, changes)
+	assert.LessOrEqual(t, len(changes), 2, "one change to ? and one to V, and no more: %v", changes)
 }

@@ -205,6 +205,13 @@ func (s *grpcServer) SendChannelCharacterReceived(received *pb.ChannelCharacterR
 	s.channelEvents.Put(&pb.ChannelEvent{Event: &pb.ChannelEvent_ChannelCharacterReceived{ChannelCharacterReceived: received}})
 }
 
+func (s *grpcServer) SendChannelQualityChanged(changed *pb.ChannelQualityChanged) {
+	if s.activeServer() == nil {
+		return
+	}
+	s.channelEvents.Put(&pb.ChannelEvent{Event: &pb.ChannelEvent_ChannelQualityChanged{ChannelQualityChanged: changed}})
+}
+
 func (s *grpcServer) SendChannelRunningCallsignDetected(detected *pb.ChannelRunningCallsignDetected) {
 	if s.activeServer() == nil {
 		return

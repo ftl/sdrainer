@@ -178,3 +178,5 @@ func TestReplayStopsWithTheContext(t *testing.T) {
 	require.NoError(t, err)
 	assert.Less(t, time.Since(start), 5*time.Second, "the replay must not run the whole recording")
 }
+
+func (s *testChannelService) ChannelQualityChanged(core.Channel[float64]) {}

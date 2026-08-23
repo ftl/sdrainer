@@ -176,3 +176,5 @@ func TestProcessIgnoresDataBeforeTheConnection(t *testing.T) {
 		process.IQData(0, sampleRate, make([]float32, 2*testChunk))
 	})
 }
+
+func (s *testChannelService) ChannelQualityChanged(core.Channel[int]) {}

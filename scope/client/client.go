@@ -178,6 +178,8 @@ func (c *Client) readFromChannelStream(out chan<- any, stream grpc.ServerStreami
 			out <- ChannelCreated{Channel: readChannel(event.ChannelCreated.Channel)}
 		case *pb.ChannelEvent_ChannelDestroyed:
 			out <- ChannelDestroyed{Channel: readChannel(event.ChannelDestroyed.Channel)}
+		case *pb.ChannelEvent_ChannelQualityChanged:
+			out <- ChannelQualityChanged{Channel: readChannel(event.ChannelQualityChanged.Channel)}
 		case *pb.ChannelEvent_ChannelStateChanged:
 			out <- ChannelStateChanged{Channel: readChannel(event.ChannelStateChanged.Channel)}
 		case *pb.ChannelEvent_ChannelCharacterReceived:
@@ -204,7 +206,8 @@ type (
 	ChannelCreated   struct{ Channel Channel }
 	ChannelDestroyed struct{ Channel Channel }
 
-	ChannelStateChanged struct{ Channel Channel }
+	ChannelStateChanged   struct{ Channel Channel }
+	ChannelQualityChanged struct{ Channel Channel }
 
 	ChannelCharacterReceived struct {
 		Channel   Channel
@@ -226,6 +229,7 @@ func readChannel(channel *pb.Channel) Channel {
 		SNR:       float64(channel.Snr),
 		State:     readChannelState(channel.State),
 		Callsign:  readCallsign(channel.Callsign),
+		Quality:   core.ChannelQuality(firstRune(channel.Quality)),
 	}
 }
 

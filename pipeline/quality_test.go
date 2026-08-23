@@ -25,7 +25,7 @@ func TestQualityOfASpotWithThinEvidence(t *testing.T) {
 	quality := qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000),
 		callsignEvidence{hits: minCallsignHits})
 
-	assert.Equal(t, QualityUnverified, quality.tag)
+	assert.Equal(t, core.UnverifiedQuality, quality.tag)
 	assert.Empty(t, quality.correction)
 }
 
@@ -35,7 +35,7 @@ func TestQualityOfASpotWithEnoughHits(t *testing.T) {
 	quality := qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000),
 		callsignEvidence{hits: validCallsignHits})
 
-	assert.Equal(t, QualityValid, quality.tag)
+	assert.Equal(t, core.ValidQuality, quality.tag)
 }
 
 // TestQualityOfASpotWithACompetitor covers the channel on which the decoder read the callsign in two
@@ -46,7 +46,7 @@ func TestQualityOfASpotWithACompetitor(t *testing.T) {
 	quality := qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000),
 		callsignEvidence{hits: validCallsignHits, nearCompetitor: true})
 
-	assert.Equal(t, QualityUnverified, quality.tag)
+	assert.Equal(t, core.UnverifiedQuality, quality.tag)
 }
 
 // TestQualityOfABustedCallsign is the case that costs a contest operator a QSO: the decoder loses
@@ -56,12 +56,12 @@ func TestQualityOfABustedCallsign(t *testing.T) {
 	qualities := newSpotQualities[float64]()
 	valid := qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000),
 		callsignEvidence{hits: validCallsignHits})
-	require.Equal(t, QualityValid, valid.tag)
+	require.Equal(t, core.ValidQuality, valid.tag)
 
 	quality := qualities.tagFor(qualityChannel(t, "1", "dl1abd", 7028000),
 		callsignEvidence{hits: validCallsignHits})
 
-	assert.Equal(t, QualityBusted, quality.tag)
+	assert.Equal(t, core.BustedQuality, quality.tag)
 	assert.Equal(t, "DL1ABC", quality.correction)
 }
 
@@ -74,7 +74,7 @@ func TestQualityOfACallsignOfAnotherChannel(t *testing.T) {
 	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abd", 7035000),
 		callsignEvidence{hits: validCallsignHits})
 
-	assert.Equal(t, QualityValid, quality.tag)
+	assert.Equal(t, core.ValidQuality, quality.tag)
 }
 
 // TestQualityOfAStationThatMoved covers the station that was valid and appears somewhere else. It is
@@ -86,7 +86,7 @@ func TestQualityOfAStationThatMoved(t *testing.T) {
 	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7035000),
 		callsignEvidence{hits: validCallsignHits})
 
-	assert.Equal(t, QualityQSY, quality.tag)
+	assert.Equal(t, core.QSYQuality, quality.tag)
 }
 
 // TestQualityOfAStationThatDrifts is the other side: the tracker follows a station over a small
@@ -98,7 +98,7 @@ func TestQualityOfAStationThatDrifts(t *testing.T) {
 	quality := qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000+qsyWidth/2),
 		callsignEvidence{hits: validCallsignHits})
 
-	assert.Equal(t, QualityValid, quality.tag)
+	assert.Equal(t, core.ValidQuality, quality.tag)
 }
 
 // TestQualityForgetsTheCallsignsOfAChannelThatIsGone covers the channel that goes away: a new
@@ -111,7 +111,7 @@ func TestQualityForgetsTheCallsignsOfAChannelThatIsGone(t *testing.T) {
 
 	quality := qualities.tagFor(qualityChannel(t, "1", "dl1abd", 7028000),
 		callsignEvidence{hits: validCallsignHits})
-	assert.NotEqual(t, QualityBusted, quality.tag)
+	assert.NotEqual(t, core.BustedQuality, quality.tag)
 }
 
 func TestQualityOfAChannelWithoutACallsign(t *testing.T) {
@@ -119,16 +119,16 @@ func TestQualityOfAChannelWithoutACallsign(t *testing.T) {
 
 	quality := qualities.tagFor(core.Channel[float64]{ID: "1"}, callsignEvidence{hits: validCallsignHits})
 
-	assert.Equal(t, QualityUnverified, quality.tag)
+	assert.Equal(t, core.UnverifiedQuality, quality.tag)
 }
 
 func TestSpotMessage(t *testing.T) {
 	channel := qualityChannel(t, "1", "dl1abc", 7028000)
 
-	assert.Equal(t, "CW 25 dB 24 WPM CQ V", spotMessage(channel, spotQuality{tag: QualityValid}))
-	assert.Equal(t, "CW 25 dB 24 WPM CQ ?", spotMessage(channel, spotQuality{tag: QualityUnverified}))
+	assert.Equal(t, "CW 25 dB 24 WPM CQ V", spotMessage(channel, spotQuality{tag: core.ValidQuality}))
+	assert.Equal(t, "CW 25 dB 24 WPM CQ ?", spotMessage(channel, spotQuality{tag: core.UnverifiedQuality}))
 	assert.Equal(t, "CW 25 dB 24 WPM CQ B (DL1ABC)",
-		spotMessage(channel, spotQuality{tag: QualityBusted, correction: "DL1ABC"}))
+		spotMessage(channel, spotQuality{tag: core.BustedQuality, correction: "DL1ABC"}))
 }
 
 func TestLevenshtein(t *testing.T) {
@@ -173,32 +173,32 @@ func TestQualityOfAStationOnTwoBands(t *testing.T) {
 
 	tt := []struct {
 		frequency float64
-		expected  rune
+		expected  core.ChannelQuality
 	}{
-		{frequency: 7028000, expected: QualityValid},
-		{frequency: 14028000, expected: QualityValid},
-		{frequency: 7028000, expected: QualityValid},
-		{frequency: 14028000, expected: QualityValid},
-		{frequency: 21028000, expected: QualityValid},
+		{frequency: 7028000, expected: core.ValidQuality},
+		{frequency: 14028000, expected: core.ValidQuality},
+		{frequency: 7028000, expected: core.ValidQuality},
+		{frequency: 14028000, expected: core.ValidQuality},
+		{frequency: 21028000, expected: core.ValidQuality},
 	}
 	for _, tc := range tt {
 		quality := qualities.tagFor(qualityChannel(t, "1", "dl1abc", tc.frequency), evidence)
 
-		assert.Equalf(t, string(tc.expected), string(quality.tag), "at %.0f Hz", tc.frequency)
+		assert.Equalf(t, tc.expected.String(), quality.tag.String(), "at %.0f Hz", tc.frequency)
 	}
 }
 
-// TestQualityOfAStationThatMovesInsideOneBand keeps the case that QualityQSY is for: the station
+// TestQualityOfAStationThatMovesInsideOneBand keeps the case that core.QSYQuality is for: the station
 // stays on the band and it changes its frequency there.
 func TestQualityOfAStationThatMovesInsideOneBand(t *testing.T) {
 	qualities := newSpotQualities[float64]()
 	evidence := callsignEvidence{hits: validCallsignHits}
 
-	require.Equal(t, QualityValid, qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), evidence).tag)
+	require.Equal(t, core.ValidQuality, qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), evidence).tag)
 
 	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7035000), evidence)
 
-	assert.Equal(t, QualityQSY, quality.tag)
+	assert.Equal(t, core.QSYQuality, quality.tag)
 }
 
 func TestBandOfAFrequency(t *testing.T) {

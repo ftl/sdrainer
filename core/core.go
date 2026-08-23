@@ -77,6 +77,41 @@ const (
 	DeadChannel
 )
 
+// ChannelQuality says how much a consumer can trust the callsign of a channel. The values are the
+// tags of the algorithm of CT1BOH, which AR-Cluster 6 gives to a client that asks for them, so a
+// consumer that already reads those tags needs no new knowledge.
+//
+// doc/architecture.md, section 9.1, holds the rule behind each value.
+type ChannelQuality rune
+
+const (
+	// NoQuality holds for a channel that gave no callsign yet.
+	NoQuality ChannelQuality = 0
+
+	// UnverifiedQuality says that the evidence is thin: the callsign reached the smallest count of
+	// the hits that gives a spot at all, and no more.
+	UnverifiedQuality ChannelQuality = '?'
+
+	// ValidQuality says that the receiver is sure. It is not the V of AR-Cluster 6, which says that
+	// three receivers at three places agree: here one receiver read the same callsign many times,
+	// over more than one transmission.
+	ValidQuality ChannelQuality = 'V'
+
+	// QSYQuality says that this callsign was valid before on another frequency of the same band.
+	QSYQuality ChannelQuality = 'Q'
+
+	// BustedQuality says that this callsign stands one character beside a callsign that the same
+	// channel already made valid.
+	BustedQuality ChannelQuality = 'B'
+)
+
+func (q ChannelQuality) String() string {
+	if q == NoQuality {
+		return ""
+	}
+	return string(rune(q))
+}
+
 // Channel represents a CW signal that the pipeline found and follows.
 type Channel[F dsp.Number] struct {
 	ID        ChannelID
@@ -85,6 +120,7 @@ type Channel[F dsp.Number] struct {
 	SNR       float64
 	State     ChannelState
 	Callsign  callsign.Callsign
+	Quality   ChannelQuality
 }
 
 type ChannelLifecycleListener[F dsp.Number] interface {
@@ -104,6 +140,13 @@ type ChannelRunningCallsignListener[F dsp.Number] interface {
 	ChannelRunningCallsignDetected(Channel[F])
 }
 
+// ChannelQualityListener is notified when the quality of the callsign of a channel changes. The
+// quality of a channel goes up while the receiver reads the callsign again and again, and it can go
+// down when the receiver finds that the callsign is an error.
+type ChannelQualityListener[F dsp.Number] interface {
+	ChannelQualityChanged(Channel[F])
+}
+
 type ChannelService[F dsp.Number] interface {
 	Active() bool
 	ChannelCreated(channel Channel[F])
@@ -111,6 +154,7 @@ type ChannelService[F dsp.Number] interface {
 	ChannelStateChanged(channel Channel[F])
 	ChannelCharacterReceived(channel Channel[F], character rune, offset int64)
 	ChannelRunningCallsignDetected(channel Channel[F])
+	ChannelQualityChanged(channel Channel[F])
 }
 
 type NullChannelService[F dsp.Number] struct{}
@@ -122,3 +166,4 @@ func (s *NullChannelService[F]) ChannelStateChanged(channel Channel[F]) {}
 func (s *NullChannelService[F]) ChannelCharacterReceived(channel Channel[F], character rune, offset int64) {
 }
 func (s *NullChannelService[F]) ChannelRunningCallsignDetected(channel Channel[F]) {}
+func (s *NullChannelService[F]) ChannelQualityChanged(channel Channel[F])          {}

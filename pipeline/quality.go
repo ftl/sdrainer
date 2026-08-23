@@ -7,35 +7,12 @@ import (
 	"github.com/ftl/sdrainer/dsp"
 )
 
-// The quality tags of a spot. They are the tags of the algorithm of CT1BOH, which AR-Cluster 6
-// gives to a client that asks for them with "SET DX EXTENSION SKIMMERQUALITY". A logger that reads
-// those tags, for example DXLog or N1MM+, therefore needs no change for the spots of SDRainer.
+// The quality tags of a spot are core.ChannelQuality. They are the tags of the algorithm of CT1BOH,
+// which AR-Cluster 6 gives to a client that asks for them with "SET DX EXTENSION SKIMMERQUALITY". A
+// logger that reads those tags, for example DXLog or N1MM+, therefore needs no change for the spots
+// of SDRainer.
 //
 // doc/spot_quality_concept.md holds the sources and the whole concept.
-const (
-	// QualityUnverified says that the evidence of this spot is thin: the callsign reached the
-	// smallest count of the hits that gives a spot at all, and no more.
-	QualityUnverified rune = '?'
-
-	// QualityValid says that this receiver is sure.
-	//
-	// **This is not the meaning that AR-Cluster 6 gives to V.** There, V says that three receivers
-	// at three places posted the same callsign on the same frequency. SDRainer is one receiver, and
-	// it cannot say that. Here V says that one receiver read the same callsign beside a keyword of
-	// a call validCallsignHits times, over more than one transmission, and that no other callsign
-	// of the same channel is near it. Both are agreement over observations that do not depend on
-	// each other: there over the place, here over the time.
-	QualityValid rune = 'V'
-
-	// QualityQSY says that this callsign was valid before on another frequency. The station moved,
-	// or the new spot is an image of the old one.
-	QualityQSY rune = 'Q'
-
-	// QualityBusted says that this callsign stands one character beside a callsign that the same
-	// channel already made valid, so the decoder read the same station in two ways. The correct
-	// callsign goes with the spot.
-	QualityBusted rune = 'B'
-)
 
 const (
 	// validCallsignHits is the count of the hits at which a spot becomes valid. minCallsignHits is
@@ -64,7 +41,7 @@ const (
 
 // bandOf gives the band of a frequency, as the count of the whole MHz.
 //
-// **QualityQSY holds inside one band and not over two bands.** A station of a multi-operator group
+// **core.QSYQuality holds inside one band and not over two bands.** A station of a multi-operator group
 // runs on more than one band at the same time, and that is the normal way of such a station: it is
 // no QSY, and it is no image. Without the band a callsign on 7 MHz and on 14 MHz gives a QSY at each
 // change, and neither of the two frequencies ever becomes valid again.
@@ -86,53 +63,74 @@ type validKey struct {
 
 // spotQuality is the answer for one spot.
 type spotQuality struct {
-	tag rune
+	tag core.ChannelQuality
 
-	// correction holds the callsign that the receiver made valid, for a spot with QualityBusted. It
+	// correction holds the callsign that the receiver made valid, for a spot with core.BustedQuality. It
 	// is empty for each other tag. A logger takes such a spot as a spot of the corrected callsign,
 	// and it drops a busted spot without a correction.
 	correction string
 }
 
 // spotQualities gives the quality tag of each spot of one receiver. It holds what the receiver made
-// valid so far, because QualityBusted and QualityQSY need that knowledge.
+// valid so far, because core.BustedQuality and core.QSYQuality need that knowledge.
 //
 // Only the worker of the pipeline uses it, so it needs no lock.
 type spotQualities[F dsp.Number] struct {
-	// validAt holds the frequency at which each callsign became valid, for each band. QualityQSY
+	// validAt holds the frequency at which each callsign became valid, for each band. core.QSYQuality
 	// needs it.
 	validAt map[validKey]F
 
-	// validOfChannel holds the callsigns that became valid on one channel. QualityBusted needs it:
+	// validOfChannel holds the callsigns that became valid on one channel. core.BustedQuality needs it:
 	// a busted callsign of a channel is near a callsign that the same channel already gave.
 	validOfChannel map[core.ChannelID][]string
+
+	// current holds the quality of each channel, so that the pipeline sees a change of it.
+	current map[core.ChannelID]core.ChannelQuality
 }
 
 func newSpotQualities[F dsp.Number]() *spotQualities[F] {
 	return &spotQualities[F]{
 		validAt:        make(map[validKey]F),
 		validOfChannel: make(map[core.ChannelID][]string),
+		current:        make(map[core.ChannelID]core.ChannelQuality),
 	}
 }
 
 // channelDestroyed forgets the callsigns of a channel that went away. validAt stays: a station that
-// comes back on another frequency of the same band is exactly the case of QualityQSY.
+// comes back on another frequency of the same band is exactly the case of core.QSYQuality.
 func (q *spotQualities[F]) channelDestroyed(id core.ChannelID) {
 	delete(q.validOfChannel, id)
+	delete(q.current, id)
+}
+
+// qualityOf gives the quality of a channel, or core.NoQuality while that channel gave no callsign.
+// Each event of a channel carries that value.
+func (q *spotQualities[F]) qualityOf(id core.ChannelID) core.ChannelQuality {
+	return q.current[id]
+}
+
+// changed holds the new quality of a channel and tells if it is another one than before.
+func (q *spotQualities[F]) changed(id core.ChannelID, quality core.ChannelQuality) bool {
+	if q.current[id] == quality {
+		return false
+	}
+
+	q.current[id] = quality
+	return true
 }
 
 // tagFor gives the quality of one spot, and it holds what that spot makes valid.
 func (q *spotQualities[F]) tagFor(channel core.Channel[F], evidence callsignEvidence) spotQuality {
 	call := channel.Callsign.String()
 	if call == "" {
-		return spotQuality{tag: QualityUnverified}
+		return spotQuality{tag: core.UnverifiedQuality}
 	}
 
 	// A callsign that stands beside a callsign of the same channel that is already valid is an
 	// error of the decoder, and not a second station: two stations of one channel do not have
 	// callsigns that differ in one character.
 	if correction, ok := q.nearValidOfChannel(channel.ID, call); ok {
-		return spotQuality{tag: QualityBusted, correction: correction}
+		return spotQuality{tag: core.BustedQuality, correction: correction}
 	}
 
 	valid := evidence.hits >= validCallsignHits && !evidence.nearCompetitor
@@ -143,15 +141,15 @@ func (q *spotQualities[F]) tagFor(channel core.Channel[F], evidence callsignEvid
 		if valid {
 			q.makeValid(channel, call)
 		}
-		return spotQuality{tag: QualityQSY}
+		return spotQuality{tag: core.QSYQuality}
 	}
 
 	if valid {
 		q.makeValid(channel, call)
-		return spotQuality{tag: QualityValid}
+		return spotQuality{tag: core.ValidQuality}
 	}
 
-	return spotQuality{tag: QualityUnverified}
+	return spotQuality{tag: core.UnverifiedQuality}
 }
 
 func (q *spotQualities[F]) makeValid(channel core.Channel[F], call string) {

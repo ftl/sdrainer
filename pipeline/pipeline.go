@@ -484,6 +484,7 @@ func (p *Pipeline[S, F]) emitChannelCreated(channel core.Channel[F]) {
 
 func (p *Pipeline[S, F]) emitChannelDestroyed(channel core.Channel[F]) {
 	channel.Callsign = p.callsigns.CallsignOf(channel.ID)
+	channel.Quality = p.qualities.qualityOf(channel.ID)
 	p.decode.ChannelDestroyed(channel)
 	p.callsigns.ChannelDestroyed(channel)
 	p.qualities.channelDestroyed(channel.ID)
@@ -500,6 +501,7 @@ func (p *Pipeline[S, F]) emitChannelDestroyed(channel core.Channel[F]) {
 func (p *Pipeline[S, F]) emitChannelStateChanged(channel core.Channel[F]) {
 	channel.WPM = p.decode.WPMOf(channel.ID)
 	channel.Callsign = p.callsigns.CallsignOf(channel.ID)
+	channel.Quality = p.qualities.qualityOf(channel.ID)
 	notify.Emit(p.listeners, func(l core.ChannelStateListener[F]) {
 		l.ChannelStateChanged(channel)
 	})
@@ -507,6 +509,7 @@ func (p *Pipeline[S, F]) emitChannelStateChanged(channel core.Channel[F]) {
 
 func (p *Pipeline[S, F]) emitChannelCharacterReceived(channel core.Channel[F], character rune, offset int64) {
 	channel.Callsign = p.callsigns.CallsignOf(channel.ID)
+	channel.Quality = p.qualities.qualityOf(channel.ID)
 	notify.Emit(p.listeners, func(l core.ChannelReceiveListener[F]) {
 		l.ChannelCharacterReceived(channel, character, offset)
 	})
@@ -517,12 +520,24 @@ func (p *Pipeline[S, F]) emitChannelCharacterReceived(channel core.Channel[F], c
 }
 
 func (p *Pipeline[S, F]) emitChannelRunningCallsignDetected(channel core.Channel[F]) {
+	// The quality comes first, so that each consumer of this moment sees the same value: the event
+	// of the callsign, the comment of the spot, and the event of the quality.
+	quality := p.qualities.tagFor(channel, p.callsigns.evidenceOf(channel.ID))
+	channel.Quality = quality.tag
+
 	notify.Emit(p.listeners, func(l core.ChannelRunningCallsignListener[F]) {
 		l.ChannelRunningCallsignDetected(channel)
 	})
 
-	quality := p.qualities.tagFor(channel, p.callsigns.evidenceOf(channel.ID))
 	p.spotter.Spot(channel.Callsign.String(), channel.Frequency, spotMessage(channel, quality), time.Now())
+
+	// The quality of a channel goes up while the receiver reads the callsign again and again, and a
+	// consumer that shows a channel needs that change.
+	if p.qualities.changed(channel.ID, quality.tag) {
+		notify.Emit(p.listeners, func(l core.ChannelQualityListener[F]) {
+			l.ChannelQualityChanged(channel)
+		})
+	}
 }
 
 // spotMessage writes the comment of a spot in the form that a skimmer of AR-Cluster 6 uses:
