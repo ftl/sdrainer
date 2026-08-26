@@ -77,14 +77,57 @@ func TestQualityOfACallsignOfAnotherChannel(t *testing.T) {
 	assert.Equal(t, core.ValidQuality, quality.tag)
 }
 
-// TestQualityOfAStationThatMoved covers the station that was valid and appears somewhere else. It is
-// a QSY, or the new spot is an image of the old one, and the consumer must know that.
+// TestQualityOfAStationThatMoved covers the station that was valid and appears somewhere else with
+// thin evidence. It is a QSY, or the new spot is an image of the old one, and the consumer must know
+// that.
 func TestQualityOfAStationThatMoved(t *testing.T) {
 	qualities := newSpotQualities[float64]()
 	qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), callsignEvidence{hits: validCallsignHits})
 
 	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7035000),
-		callsignEvidence{hits: validCallsignHits})
+		callsignEvidence{hits: minCallsignHits})
+
+	assert.Equal(t, core.QSYQuality, quality.tag)
+}
+
+// TestQualityOfAStationThatMovedAndStays is the case that a QSY must not hold for ever: the station
+// stands on the new frequency, the receiver reads its callsign there again and again, and the spot
+// then says that the receiver is sure.
+//
+// The tag stayed at QualityQSY before: the answer of a spot came from the frequency of the station
+// before it, and not from the evidence of the frequency where it stands now.
+func TestQualityOfAStationThatMovedAndStays(t *testing.T) {
+	qualities := newSpotQualities[float64]()
+	require.Equal(t, core.ValidQuality,
+		qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), callsignEvidence{hits: validCallsignHits}).tag,
+		"the station is valid on its first frequency")
+
+	moved := qualityChannel(t, "2", "dl1abc", 7035000)
+	require.Equal(t, core.QSYQuality,
+		qualities.tagFor(moved, callsignEvidence{hits: minCallsignHits}).tag,
+		"the first spot of the new frequency holds thin evidence")
+
+	quality := qualities.tagFor(moved, callsignEvidence{hits: validCallsignHits})
+
+	assert.Equal(t, core.ValidQuality, quality.tag, "the evidence of the new frequency is now enough")
+
+	// and it stays valid there, so a further spot gives no QSY of the frequency before it
+	assert.Equal(t, core.ValidQuality,
+		qualities.tagFor(moved, callsignEvidence{hits: validCallsignHits}).tag)
+}
+
+// TestQualityOfAStationThatMovesBack covers the station that goes to a new frequency and comes back:
+// the frequency that it left is now the other one, so it gives a QSY again while the evidence there
+// is thin.
+func TestQualityOfAStationThatMovesBack(t *testing.T) {
+	qualities := newSpotQualities[float64]()
+	full := callsignEvidence{hits: validCallsignHits}
+
+	qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), full)
+	qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7035000), full)
+
+	quality := qualities.tagFor(qualityChannel(t, "3", "dl1abc", 7028000),
+		callsignEvidence{hits: minCallsignHits})
 
 	assert.Equal(t, core.QSYQuality, quality.tag)
 }
@@ -196,7 +239,8 @@ func TestQualityOfAStationThatMovesInsideOneBand(t *testing.T) {
 
 	require.Equal(t, core.ValidQuality, qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), evidence).tag)
 
-	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7035000), evidence)
+	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7035000),
+		callsignEvidence{hits: minCallsignHits})
 
 	assert.Equal(t, core.QSYQuality, quality.tag)
 }

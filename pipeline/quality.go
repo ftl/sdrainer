@@ -133,20 +133,20 @@ func (q *spotQualities[F]) tagFor(channel core.Channel[F], evidence callsignEvid
 		return spotQuality{tag: core.BustedQuality, correction: correction}
 	}
 
-	valid := evidence.hits >= validCallsignHits && !evidence.nearCompetitor
-
-	// The station was valid before on this band, and it stands somewhere else on it now.
-	key := validKey{call: call, band: bandOf(float64(channel.Frequency))}
-	if previous, ok := q.validAt[key]; ok && math.Abs(float64(channel.Frequency-previous)) > qsyWidth {
-		if valid {
-			q.makeValid(channel, call)
-		}
-		return spotQuality{tag: core.QSYQuality}
-	}
-
-	if valid {
+	// **The evidence of this frequency decides.** A station that stands here with enough hits is
+	// valid here, whatever it did before: the receiver read its callsign here, again and again, and
+	// that is what QualityValid says.
+	if evidence.hits >= validCallsignHits && !evidence.nearCompetitor {
 		q.makeValid(channel, call)
 		return spotQuality{tag: core.ValidQuality}
+	}
+
+	// The station was valid before on this band and it stands somewhere else on it now, and the
+	// evidence here is still thin. It moved, or this spot is an image of the other frequency, and a
+	// consumer must know that. The spot becomes valid as soon as the evidence here is enough.
+	key := validKey{call: call, band: bandOf(float64(channel.Frequency))}
+	if previous, ok := q.validAt[key]; ok && math.Abs(float64(channel.Frequency-previous)) > qsyWidth {
+		return spotQuality{tag: core.QSYQuality}
 	}
 
 	return spotQuality{tag: core.UnverifiedQuality}

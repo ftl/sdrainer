@@ -1283,7 +1283,7 @@ DX de local-#:   14035.0  DL1ABC       CW 25 dB 24 WPM CQ V           1651z
 |---|---|
 | `?` | the callsign reached minCallsignHits and no more |
 | `V` | the callsign reached validCallsignHits, and no other callsign of the channel stands near it |
-| `Q` | this callsign was valid before on another frequency **of the same band**: the station moved, or the spot is an image |
+| `Q` | this callsign was valid before on another frequency **of the same band**, and the evidence here is still thin: the station moved, or the spot is an image |
 | `B` | the callsign stands one character beside a callsign that the same channel made valid; the correct callsign follows in parentheses |
 
 A logger that reads the tags of AR-Cluster 6, for example DXLog or N1MM+, needs
@@ -1297,6 +1297,17 @@ and SDRainer writes them always.
 > over more than one transmission. Both are agreement over observations that do
 > not depend on each other, and one is over the place while the other is over the
 > time.
+
+**The evidence of the frequency decides, and `Q` is not for ever.** A station
+that stands on a new frequency with `validCallsignHits` hits is valid there,
+whatever it did before: the receiver read its callsign there, again and again,
+and that is what `V` says. `Q` therefore holds only while the evidence of the new
+frequency is thin, thus for the first spot of that frequency.
+
+The tag stayed at `Q` before: the answer came from the frequency of the station
+before it, and not from the evidence of the frequency where it stands now. A
+station that moved therefore never became valid again, because the callsign stage
+gives one spot for each quality and it had already given both.
 
 **`Q` holds inside one band and not over two bands.** A station of a
 multi-operator group runs on more than one band at the same time, and that is the
