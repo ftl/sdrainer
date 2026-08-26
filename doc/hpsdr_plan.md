@@ -1,9 +1,14 @@
 # Plan: the `hpsdr` command
 
-> **Status on 2026-08-23: the steps 1 to 4 are implemented.** Section 8.3 of
-> doc/architecture.md holds what the code does. Step 5, the test against real
-> hardware, is open, and section 6 below holds two answers that the
-> implementation gave.
+> **Status on 2026-08-24: the steps 1 to 4 are implemented, and a Hermes-Lite 2
+> decodes and spots correctly with one receiver.** Section 8.3 of
+> doc/architecture.md holds what the code does.
+>
+> That test found two defects, and section 6 holds both: the missing stream to
+> the device, and the order of I and Q. **Two things are still open:** the case of
+> more than one receiver, which no hardware has seen since the frequency of the
+> receivers behind the first one reached the device, and each device that is not a
+> Hermes-Lite 2.
 
 ```
 sdrainer hpsdr --host=<host:port> --center=7020000,14020000,21020000 --sample-rate=48000
