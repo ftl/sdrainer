@@ -251,7 +251,7 @@ func (s *Server[_]) registerSpot(hash spotHash, timestamp time.Time) {
 
 func (s *Server[F]) formatSpotMessage(callsign string, frequency F, msg string, timestamp time.Time) string {
 	prefix := fmt.Sprintf("DX de %s:", s.mycall)
-	return fmt.Sprintf("%-16s% 6.1f  %-13s%-31s%-4sz\n", prefix, float64(frequency)/1000.0, callsign, msg, timestamp.UTC().Format("1504"))
+	return fmt.Sprintf("%-16s %7.1f  %-13s%-31s%-4sz\n", prefix, float64(frequency)/1000.0, callsign, msg, timestamp.UTC().Format("1504"))
 }
 
 var ErrClosed = errors.New("connection already closed")
