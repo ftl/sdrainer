@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"math"
+	"time"
 
 	"github.com/ftl/sdrainer/core"
 	"github.com/ftl/sdrainer/dsp"
@@ -37,6 +38,21 @@ const (
 	// frequency. It is far above the width of a match of the tracker, which is 100 Hz, so the drift
 	// of a station gives no QSY.
 	qsyWidth = 500.0
+
+	// validRetention is the time for which a callsign that became valid stays valid on its
+	// frequency. Each spot of that callsign on that frequency begins the time again.
+	//
+	// **A running station keeps its answer over the pauses of its channel.** A channel lives while
+	// the tracker sees the signal, and a station that answers a call, or that stands still for a
+	// moment, lets its channel die. The next call then builds a new channel, and everything that
+	// belongs to the old one is gone: the hits of the callsign begin at zero, and the first spot of
+	// the new channel gave QualityUnverified again although the receiver was sure two minutes
+	// before.
+	//
+	// A contest QSO in CW takes well below one minute, and a station that runs works one station
+	// after the other, so ten minutes hold many QSOs. A station that is gone for longer than that
+	// gives its frequency away, and the next callsign there is another station.
+	validRetention = 10 * time.Minute
 )
 
 // bandOf gives the band of a frequency, as the count of the whole MHz.
@@ -71,14 +87,24 @@ type spotQuality struct {
 	correction string
 }
 
+// validEntry holds the frequency at which a callsign became valid and the moment of the last spot
+// that stood behind it. validRetention says how long that moment counts.
+type validEntry[F dsp.Number] struct {
+	frequency F
+	lastSeen  time.Time
+}
+
 // spotQualities gives the quality tag of each spot of one receiver. It holds what the receiver made
 // valid so far, because core.BustedQuality and core.QSYQuality need that knowledge.
 //
 // Only the worker of the pipeline uses it, so it needs no lock.
 type spotQualities[F dsp.Number] struct {
-	// validAt holds the frequency at which each callsign became valid, for each band. core.QSYQuality
-	// needs it.
-	validAt map[validKey]F
+	// validAt holds the frequency at which each callsign became valid, for each band, and the
+	// moment of the last spot. core.QSYQuality and validRetention need it.
+	validAt map[validKey]validEntry[F]
+
+	// now gives the time. A test gives a clock of its own.
+	now func() time.Time
 
 	// validOfChannel holds the callsigns that became valid on one channel. core.BustedQuality needs it:
 	// a busted callsign of a channel is near a callsign that the same channel already gave.
@@ -90,14 +116,16 @@ type spotQualities[F dsp.Number] struct {
 
 func newSpotQualities[F dsp.Number]() *spotQualities[F] {
 	return &spotQualities[F]{
-		validAt:        make(map[validKey]F),
+		validAt:        make(map[validKey]validEntry[F]),
+		now:            time.Now,
 		validOfChannel: make(map[core.ChannelID][]string),
 		current:        make(map[core.ChannelID]core.ChannelQuality),
 	}
 }
 
-// channelDestroyed forgets the callsigns of a channel that went away. validAt stays: a station that
-// comes back on another frequency of the same band is exactly the case of core.QSYQuality.
+// channelDestroyed forgets the callsigns of a channel that went away. validAt stays for
+// validRetention: a station that comes back on its frequency is still valid, and one that comes back
+// on another frequency of the same band is exactly the case of core.QSYQuality.
 func (q *spotQualities[F]) channelDestroyed(id core.ChannelID) {
 	delete(q.validOfChannel, id)
 	delete(q.current, id)
@@ -133,27 +161,47 @@ func (q *spotQualities[F]) tagFor(channel core.Channel[F], evidence callsignEvid
 		return spotQuality{tag: core.BustedQuality, correction: correction}
 	}
 
+	now := q.now()
+	key := validKey{call: call, band: bandOf(float64(channel.Frequency))}
+	previous, wasValid := q.validAt[key]
+	if wasValid && now.Sub(previous.lastSeen) > validRetention {
+		// the station gave its frequency away, so the receiver begins again
+		delete(q.validAt, key)
+		wasValid = false
+	}
+
 	// **The evidence of this frequency decides.** A station that stands here with enough hits is
 	// valid here, whatever it did before: the receiver read its callsign here, again and again, and
 	// that is what QualityValid says.
 	if evidence.hits >= validCallsignHits && !evidence.nearCompetitor {
-		q.makeValid(channel, call)
+		q.makeValid(channel, call, now)
 		return spotQuality{tag: core.ValidQuality}
 	}
 
-	// The station was valid before on this band and it stands somewhere else on it now, and the
-	// evidence here is still thin. It moved, or this spot is an image of the other frequency, and a
-	// consumer must know that. The spot becomes valid as soon as the evidence here is enough.
-	key := validKey{call: call, band: bandOf(float64(channel.Frequency))}
-	if previous, ok := q.validAt[key]; ok && math.Abs(float64(channel.Frequency-previous)) > qsyWidth {
-		return spotQuality{tag: core.QSYQuality}
+	if wasValid {
+		// The station was valid before on this band and it stands somewhere else on it now, and the
+		// evidence here is still thin. It moved, or this spot is an image of the other frequency,
+		// and a consumer must know that. The spot becomes valid as soon as the evidence here is
+		// enough.
+		if math.Abs(float64(channel.Frequency-previous.frequency)) > qsyWidth {
+			return spotQuality{tag: core.QSYQuality}
+		}
+
+		// The same callsign stands on the same frequency, inside validRetention: it is the station
+		// that the receiver already made valid, and the thin evidence comes from the new channel
+		// and not from a doubt about the callsign.
+		q.makeValid(channel, call, now)
+		return spotQuality{tag: core.ValidQuality}
 	}
 
 	return spotQuality{tag: core.UnverifiedQuality}
 }
 
-func (q *spotQualities[F]) makeValid(channel core.Channel[F], call string) {
-	q.validAt[validKey{call: call, band: bandOf(float64(channel.Frequency))}] = channel.Frequency
+func (q *spotQualities[F]) makeValid(channel core.Channel[F], call string, now time.Time) {
+	q.validAt[validKey{call: call, band: bandOf(float64(channel.Frequency))}] = validEntry[F]{
+		frequency: channel.Frequency,
+		lastSeen:  now,
+	}
 
 	for _, current := range q.validOfChannel[channel.ID] {
 		if current == call {

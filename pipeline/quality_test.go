@@ -2,13 +2,29 @@ package pipeline
 
 import (
 	"testing"
+	"time"
 
 	"github.com/ftl/hamradio/callsign"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ftl/sdrainer/core"
+	"github.com/ftl/sdrainer/dsp"
 )
+
+// clock gives the time of a test, so that a test of validRetention needs no pause.
+type clock struct {
+	now time.Time
+}
+
+func (c *clock) advance(d time.Duration) { c.now = c.now.Add(d) }
+
+// testClock puts a clock of the test into the qualities and gives it back.
+func testClock[F dsp.Number](qualities *spotQualities[F]) *clock {
+	result := &clock{now: time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)}
+	qualities.now = func() time.Time { return result.now }
+	return result
+}
 
 func qualityChannel(t *testing.T, id core.ChannelID, call string, frequency float64) core.Channel[float64] {
 	t.Helper()
@@ -275,4 +291,70 @@ func TestBandOfAFrequency(t *testing.T) {
 func TestBandOfAFrequencyOverTheBorderOfOneMHz(t *testing.T) {
 	assert.Equal(t, 28, bandOf(28500000), "the lower part of 10 m")
 	assert.Equal(t, 29, bandOf(29100000), "the upper part of 10 m")
+}
+
+// TestQualityOfAStationThatComesBack is the case that took the answer away from a running station:
+// its channel dies while it works a station, and the next call builds a new channel with no hits at
+// all. Without validRetention the first spot of that channel gave QualityUnverified again.
+func TestQualityOfAStationThatComesBack(t *testing.T) {
+	qualities := newSpotQualities[float64]()
+	clock := testClock(qualities)
+	require.Equal(t, core.ValidQuality,
+		qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), callsignEvidence{hits: validCallsignHits}).tag)
+
+	// the channel dies while the station works the station that called it
+	qualities.channelDestroyed("1")
+	clock.advance(2 * time.Minute)
+
+	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7028000),
+		callsignEvidence{hits: minCallsignHits})
+
+	assert.Equal(t, core.ValidQuality, quality.tag)
+}
+
+// TestQualityOfAStationThatStaysOverTheRetention covers the station that runs for hours: each spot
+// begins validRetention again, so the answer never falls back although each single pause is short.
+func TestQualityOfAStationThatStaysOverTheRetention(t *testing.T) {
+	qualities := newSpotQualities[float64]()
+	clock := testClock(qualities)
+	qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), callsignEvidence{hits: validCallsignHits})
+
+	thin := callsignEvidence{hits: minCallsignHits}
+	for i := range 10 {
+		clock.advance(validRetention - time.Minute)
+
+		quality := qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), thin)
+
+		assert.Equalf(t, core.ValidQuality, quality.tag, "after %d pauses", i+1)
+	}
+}
+
+// TestQualityOfAStationThatIsGoneForTooLong is the other side of validRetention: the station gave
+// its frequency away, and the callsign that stands there now needs its own evidence.
+func TestQualityOfAStationThatIsGoneForTooLong(t *testing.T) {
+	qualities := newSpotQualities[float64]()
+	clock := testClock(qualities)
+	qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), callsignEvidence{hits: validCallsignHits})
+
+	clock.advance(validRetention + time.Minute)
+
+	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7028000),
+		callsignEvidence{hits: minCallsignHits})
+
+	assert.Equal(t, core.UnverifiedQuality, quality.tag)
+}
+
+// TestQualityOfAStationThatMovedLongAgo covers the QSY that is out of date: the frequency that held
+// the callsign before says nothing after validRetention, so the new frequency gives no QSY.
+func TestQualityOfAStationThatMovedLongAgo(t *testing.T) {
+	qualities := newSpotQualities[float64]()
+	clock := testClock(qualities)
+	qualities.tagFor(qualityChannel(t, "1", "dl1abc", 7028000), callsignEvidence{hits: validCallsignHits})
+
+	clock.advance(validRetention + time.Minute)
+
+	quality := qualities.tagFor(qualityChannel(t, "2", "dl1abc", 7035000),
+		callsignEvidence{hits: minCallsignHits})
+
+	assert.Equal(t, core.UnverifiedQuality, quality.tag)
 }

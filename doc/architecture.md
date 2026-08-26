@@ -1309,6 +1309,22 @@ before it, and not from the evidence of the frequency where it stands now. A
 station that moved therefore never became valid again, because the callsign stage
 gives one spot for each quality and it had already given both.
 
+**A valid callsign stays valid on its frequency for `validRetention`, thus ten
+minutes.** A channel lives while the tracker sees the signal, and a running
+station lets its channel die at each QSO that it works. The next call builds a
+new channel, and everything of the old one is gone: the hits of the callsign
+begin at zero. The first spot of the new channel therefore gave `?` again,
+although the receiver was sure two minutes before.
+
+The receiver holds the frequency of each valid callsign over the life of the
+channel, and each further spot of that callsign on that frequency begins the ten
+minutes again, so a station that runs for hours keeps its `V`. After ten minutes
+without a spot the callsign gave its frequency away, and the entry falls: the
+callsign that stands there then needs its own evidence again, and its old
+frequency gives no `Q` any more.
+
+A contest QSO in CW takes well below one minute, so ten minutes hold many QSOs.
+
 **`Q` holds inside one band and not over two bands.** A station of a
 multi-operator group runs on more than one band at the same time, and that is the
 normal way of such a station: it is no QSY and it is no image. The receiver

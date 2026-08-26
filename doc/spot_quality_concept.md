@@ -124,11 +124,19 @@ on them needs no change, and it computes each tag from its own evidence:
 | Tag | The rule of SDRainer |
 |---|---|
 | `?` | the call reached `minCallsignHits` and no more, thus 2 hits |
-| `V` | the call reached `validCallsignHits` hits, and no other call of the channel is near it |
+| `V` | the call reached `validCallsignHits` hits, and no other call of the channel is near it; or it was valid on this frequency within the last `validRetention`, thus ten minutes |
 | `Q` | the same call appears on a frequency of the **same band** that is far from the frequency that held it before, and the evidence of the new frequency is still thin |
 | `B` | the call is near a call that this channel already made valid, by the Levenshtein distance, and the valid call stands in parentheses |
 
 `.` has no meaning for one skimmer, and SDRainer does not use it.
+
+**`V` needs a memory that outlives the channel.** A channel dies at each QSO that
+a running station works, and the new channel of the next call begins with no hits
+at all, so without a memory the spot of a station that the receiver already knows
+falls back to `?` after two minutes. `validRetention` is that memory: a callsign
+that was valid on a frequency stays valid there for ten minutes, and each spot
+begins the ten minutes again. After that the frequency is free, and the callsign
+that stands there needs its own evidence.
 
 **`Q` needs the band.** A station of a multi-operator group runs on more than one
 band at the same time. Without the band each change between the two bands gives a
