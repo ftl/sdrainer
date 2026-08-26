@@ -364,11 +364,7 @@ func (d *callsignDetector) repeatedCallsignAfter(index int) (callsign.Callsign, 
 		}
 	}
 
-	found, err := callsign.Parse(word)
-	if err != nil {
-		return callsign.NoCallsign, false
-	}
-	return found, true
+	return parseCallsign(word)
 }
 
 // countJoin counts a hit for a callsign that comes from a join. A join that begins at the same word
@@ -442,11 +438,67 @@ func (d *callsignDetector) join(from int, to int) (callsign.Callsign, bool) {
 		joined.WriteString(word)
 	}
 
-	found, err := callsign.Parse(joined.String())
+	return parseCallsign(joined.String())
+}
+
+// maxCallsignRepetitions is the count of the repetitions that parseCallsign takes apart. An operator
+// sends the own callsign two or three times in a row, and a longer row costs nothing here.
+const maxCallsignRepetitions = 4
+
+// parseCallsign gives the callsign of one word, and it takes a callsign that stands more than one
+// time in that word apart.
+//
+// **The decoder loses the gap between two repetitions of a callsign.** An operator sends the own
+// callsign two or three times in a row, and an operator whose gap between the repetitions is no
+// wider than the gap between two characters gives one word: "dl1abc dl1abc" arrives as
+// "dl1abcdl1abc". The join of the pieces does the same when the decoder cut both repetitions apart,
+// as in "cq d l1 abc d l1 abc".
+//
+// **callsign.Parse takes such a word.** Its expression asks for a prefix, a digit and characters
+// after it that end with a letter, and DL1ABCDL1ABC holds all of that. The spot then carries a
+// callsign that no station has, and the callsign of the station gets no hit at all: the whole word
+// is one candidate of its own.
+//
+// Only an exact repetition counts. A decoder that loses one character of one repetition gives
+// "dl1abcdl1ab", which has no period, and such a word stays as it is: a guess about which part is
+// the callsign would make a callsign out of a word that holds none.
+func parseCallsign(word string) (callsign.Callsign, bool) {
+	found, err := callsign.Parse(word)
 	if err != nil {
 		return callsign.NoCallsign, false
 	}
+
+	// found.String() is the word in upper case, and a form with a prefix or a suffix holds the "/"
+	// that no repetition survives
+	if single, ok := withoutRepetition(found.String()); ok {
+		return single, true
+	}
+
 	return found, true
+}
+
+// withoutRepetition gives the callsign that stands more than one time in the given text, if the text
+// is exactly that repetition and if that part is a callsign by itself. It takes the shortest part,
+// thus the most repetitions.
+func withoutRepetition(text string) (callsign.Callsign, bool) {
+	for count := maxCallsignRepetitions; count > 1; count-- {
+		if len(text)%count != 0 {
+			continue
+		}
+
+		part := text[:len(text)/count]
+		if strings.Repeat(part, count) != text {
+			continue
+		}
+
+		found, err := callsign.Parse(part)
+		if err != nil {
+			continue
+		}
+		return found, true
+	}
+
+	return callsign.NoCallsign, false
 }
 
 // leader gives the callsign with the most hits, if it reaches minCallsignHits. Two callsigns with
@@ -468,9 +520,5 @@ func (d *callsignDetector) leader() (callsign.Callsign, bool) {
 		return callsign.NoCallsign, false
 	}
 
-	result, err := callsign.Parse(best)
-	if err != nil {
-		return callsign.NoCallsign, false
-	}
-	return result, true
+	return parseCallsign(best)
 }

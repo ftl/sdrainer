@@ -623,3 +623,78 @@ func TestPipelineReportsAQualityOnlyWhenItChanges(t *testing.T) {
 	require.NotEmpty(t, changes)
 	assert.LessOrEqual(t, len(changes), 2, "one change to ? and one to V, and no more: %v", changes)
 }
+
+// TestCallsignStageTakesARepetitionInOneWordApart covers the decoder that loses the gap between two
+// repetitions of a callsign. Without parseCallsign the spot carried DL1ABCDL1ABC, a callsign that no
+// station has, and the callsign of the station got no hit at all.
+func TestCallsignStageTakesARepetitionInOneWordApart(t *testing.T) {
+	tt := []struct {
+		name string
+		text string
+	}{
+		{name: "two times", text: "cq dl1abcdl1abc test cq dl1abcdl1abc test "},
+		{name: "three times", text: "cq dl1abcdl1abcdl1abc test cq dl1abcdl1abcdl1abc test "},
+		{name: "one repetition beside a clean one", text: "cq dl1abcdl1abc test cq dl1abc test "},
+		{name: "in pieces", text: "cq d l1 abc d l1 abc test cq dl1abc test "},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			detected := runCallsignStage(tc.text)
+
+			require.NotEmpty(t, detected)
+			assert.Equal(t, "DL1ABC", detected[len(detected)-1].String())
+		})
+	}
+}
+
+// TestCallsignStageKeepsAWordThatIsNoCleanRepetition holds the limit of parseCallsign: a decoder
+// that loses one character of one repetition gives a word without a period, and a guess about which
+// part is the callsign would make a callsign out of a word that holds none.
+func TestCallsignStageKeepsAWordThatIsNoCleanRepetition(t *testing.T) {
+	detected := runCallsignStage("cq dl1abcdl1ab test cq dl1abcdl1ab test ")
+
+	require.NotEmpty(t, detected)
+	assert.Equal(t, "DL1ABCDL1AB", detected[len(detected)-1].String())
+}
+
+// TestParseCallsignKeepsAWordThatIsNoRepetition covers the words that must stay as they are.
+func TestParseCallsignKeepsAWordThatIsNoRepetition(t *testing.T) {
+	tt := []struct {
+		word     string
+		expected string
+	}{
+		{word: "dl1abc", expected: "DL1ABC"},
+		{word: "dl1abc/p", expected: "DL1ABC/p"},
+		{word: "dl1abcdl1ab", expected: "DL1ABCDL1AB"}, // no period, so no part of it is the callsign
+		{word: "dl1abcdl2abc", expected: "DL1ABCDL2ABC"},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.word, func(t *testing.T) {
+			found, ok := parseCallsign(tc.word)
+
+			require.True(t, ok)
+			assert.Equal(t, tc.expected, found.String())
+		})
+	}
+}
+
+// TestParseCallsignTakesTheShortestPart covers the word that holds more than one period: DL1ABC four
+// times also holds DL1ABCDL1ABC two times, and the callsign is the shortest of the parts.
+func TestParseCallsignTakesTheShortestPart(t *testing.T) {
+	found, ok := parseCallsign("dl1abcdl1abcdl1abcdl1abc")
+
+	require.True(t, ok)
+	assert.Equal(t, "DL1ABC", found.String())
+}
+
+// TestParseCallsignTakesNoWordThatIsNoCallsign holds that the split changes nothing about which
+// words are a callsign at all.
+func TestParseCallsignTakesNoWordThatIsNoCallsign(t *testing.T) {
+	for _, word := range []string{"", "cq", "n1n1", "test"} {
+		_, ok := parseCallsign(word)
+
+		assert.Falsef(t, ok, "%q is no callsign", word)
+	}
+}

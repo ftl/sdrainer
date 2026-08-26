@@ -898,6 +898,29 @@ join that begins at the same word therefore takes the hit of the shorter one
 back. A join before a keyword needs no such rule, because it begins with the
 longest one.
 
+**A callsign that stands more than one time in one word gives that callsign.**
+The other side of the wide gap: an operator sends the own callsign two or three
+times in a row, and one whose gap between the repetitions is no wider than the
+gap between two characters gives one word. `dl1abc dl1abc` then arrives as
+`dl1abcdl1abc`, and the join of the pieces does the same when the decoder cut
+both repetitions apart, as in `cq d l1 abc d l1 abc`.
+
+`callsign.Parse` of `ftl/hamradio` takes such a word: its expression asks for a
+prefix, a digit and characters after it that end with a letter, and
+`DL1ABCDL1ABC` holds all of that. The spot then carried a callsign that no
+station has, and the callsign of the station got no hit at all, because the whole
+word was a candidate of its own.
+
+`parseCallsign` stands before each parse of the stage and it takes such a word
+apart: a word that is one part repeated 2 to `maxCallsignRepetitions` times gives
+that part, if the part is a callsign by itself. It takes the shortest part, so
+`DL1ABC` four times gives `DL1ABC` and not `DL1ABCDL1ABC`.
+
+Only an exact repetition counts. A decoder that loses one character of one
+repetition gives `dl1abcdl1ab`, which has no period, and such a word stays as it
+is: a guess about which part is the callsign would make a callsign out of a word
+that holds none.
+
 > **The word `k` is not a keyword.** A running station finishes its call with
 > `k`, and that would give a second hit for each call. A station that answers
 > also finishes with `k`, and `k` is one character that the decoder makes easily
