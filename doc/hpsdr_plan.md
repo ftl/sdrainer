@@ -265,6 +265,16 @@ test of ours, which is right: it is the work of the library.
   application names both reasons: "Send empty transmit samples to pass config
   changes and keep watchdog timer happy".
 - **The sample rate of 384 kHz**, see section 4.
+- **The order of I and Q: answered by a measurement, and it was a defect.** The
+  device gives the field that the protocol calls Q as the real part of the
+  sample. The first implementation took the two in the order of their names, and
+  the spectrum was mirrored about the center: a station 10.5 kHz above the center
+  stood 10.5 kHz below it. Section 8.3 of doc/architecture.md holds the
+  measurement.
+
+  **No test of SDRainer can find this.** A test makes its samples with the same
+  assumption that the code reads them with.
+
 - **Hardware.** We have no device. Steps 1 to 4 are testable without one, and the
   claim "it works with a Hermes-Lite 2 and with an original device" needs a test
   with each of the two.

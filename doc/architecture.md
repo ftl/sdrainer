@@ -1199,6 +1199,29 @@ transmits nothing, and SDRainer transmits nothing.
 192 kHz. The device also gives 384 kHz, and no measurement of SDRainer covers
 that rate, so the command does not offer it.
 
+**The two parts of a sample stand in the other order than their names say.** The
+device gives the field that the protocol calls Q as the real part, and the
+pipeline takes the real part first. The wrong order gives a spectrum that is
+mirrored about the center: a station above the center then stands below it, by
+the same distance, and a station **on** the center stays correct.
+
+A measurement with a Hermes-Lite 2 on 2026-08-24, with a center of 7024 kHz:
+
+| | The frequency | The distance to the center |
+|---|---|---|
+| the station, from a second receiver | 7034.5 kHz | +10.5 kHz |
+| SDRainer, before the correction | 7013.5 kHz | −10.5 kHz |
+
+The speed of the station was 22 wpm in both, because a mirror does not change
+the time. The document of the openHPSDR protocol names the same thing for the
+transmit direction: "The I&Q samples, relative to receive, are reversed. This is
+a historical bug that goes back to the very first version of PowerSDR."
+
+> **A test of SDRainer cannot find that order.** Each test makes its samples with
+> the same assumption that the code reads them with, so it agrees with itself
+> whatever the order is. Only a device, or a recording of one, says which order is
+> right. The tests hold the value that the measurement gave.
+
 **One goroutine of the library gives the samples of each receiver**, one receiver
 after the other. `Pipeline.IQData` needs exactly that: it is not safe for two
 callers at the same time. The other side of it is that a pipeline that waits

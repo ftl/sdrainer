@@ -129,14 +129,18 @@ func (r *fakeReceiver) IsClosed() bool { return false }
 /* the consumer */
 
 type testChannelService struct {
-	mutex sync.Mutex
-	ids   []core.ChannelID
-	text  map[core.ChannelID][]rune
-	spots []string
+	mutex     sync.Mutex
+	ids       []core.ChannelID
+	frequency map[core.ChannelID]int
+	text      map[core.ChannelID][]rune
+	spots     []string
 }
 
 func newTestChannelService() *testChannelService {
-	return &testChannelService{text: make(map[core.ChannelID][]rune)}
+	return &testChannelService{
+		frequency: make(map[core.ChannelID]int),
+		text:      make(map[core.ChannelID][]rune),
+	}
 }
 
 func (s *testChannelService) Active() bool { return true }
@@ -145,6 +149,7 @@ func (s *testChannelService) ChannelCreated(channel core.Channel[int]) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.ids = append(s.ids, channel.ID)
+	s.frequency[channel.ID] = channel.Frequency
 }
 
 func (s *testChannelService) ChannelDestroyed(core.Channel[int])    {}
@@ -156,6 +161,7 @@ func (s *testChannelService) ChannelCharacterReceived(channel core.Channel[int],
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	s.text[channel.ID] = append(s.text[channel.ID], character)
+	s.frequency[channel.ID] = channel.Frequency
 }
 
 func (s *testChannelService) ChannelRunningCallsignDetected(core.Channel[int]) {}
@@ -172,6 +178,20 @@ func (s *testChannelService) channelIDs() []core.ChannelID {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	return append([]core.ChannelID{}, s.ids...)
+}
+
+// frequencyOfTheTextChannel gives the frequency of the channel that gave text. A recording of the
+// noise gives channels without text, and those say nothing about the frequency.
+func (s *testChannelService) frequencyOfTheTextChannel() (int, bool) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	for id, text := range s.text {
+		if len(text) > 4 {
+			return s.frequency[id], true
+		}
+	}
+	return 0, false
 }
 
 func (s *testChannelService) anyText() string {
@@ -212,9 +232,14 @@ func cwSamples(t *testing.T, center int, offset int, seconds float64) []hpsdr.Re
 	return result
 }
 
-// toReceiveSample makes one sample of the device out of two values between −1 and 1.
-func toReceiveSample(i float32, q float32) hpsdr.ReceiveSample {
-	return sample(toInt24(i), toInt24(q))
+// toReceiveSample makes one sample of the device out of the real and the imaginary part of a value
+// of the generator.
+//
+// **The device puts the real part into the field that the protocol calls Q**, see toIQ. This
+// function must therefore write the two parts in that order as well, otherwise the test agrees with
+// itself and it says nothing about the device.
+func toReceiveSample(real float32, imaginary float32) hpsdr.ReceiveSample {
+	return sample(toInt24(imaginary), toInt24(real))
 }
 
 func toInt24(value float32) int32 {
@@ -447,4 +472,39 @@ func TestProcessKeepsSendingAfterAnError(t *testing.T) {
 	defer process.Close()
 
 	assert.Eventually(t, func() bool { return radio.sentPackets() > 10 }, time.Second, 5*time.Millisecond)
+}
+
+// TestProcessKeepsTheSideOfTheSignal covers the order of I and Q. A stream whose two parts stand in
+// the wrong order gives a spectrum that is mirrored about its center: a station above the center
+// then appears below it, by the same distance.
+//
+// A measurement with a Hermes-Lite 2 showed exactly that: a station 10.5 kHz above the center of
+// 7024 kHz was spotted 10.5 kHz below it. A station **on** the center was correct, because the
+// mirror of 0 is 0.
+//
+// **This test holds the order, and it did not find it.** cwSamples writes the samples with the same
+// assumption that toIQ reads them with, so the test passes with each order that the two share. It
+// guards the value that the measurement gave, and nothing more: only a device or a recording of one
+// can say that the order is right.
+func TestProcessKeepsTheSideOfTheSignal(t *testing.T) {
+	const (
+		center = 7020000
+		offset = 10500 // above the center, as in the measurement with the device
+	)
+
+	radio := newFakeRadio()
+	service := newTestChannelService()
+	process := newTestProcess(t, radio, service, center)
+	defer process.Close()
+
+	samples := cwSamples(t, center, offset, 12)
+	for i := 0; i+testChunk <= len(samples); i += testChunk {
+		radio.sendTo(0, samples[i:i+testChunk])
+	}
+	process.Close()
+
+	frequency, ok := service.frequencyOfTheTextChannel()
+	require.Truef(t, ok, "the station must give a channel with text, got %q", service.anyText())
+	assert.InDeltaf(t, center+offset, frequency, 100,
+		"the station stands %d Hz above the center, and a mirror puts it below", offset)
 }

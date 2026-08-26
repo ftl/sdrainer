@@ -17,24 +17,29 @@ func sample(i int32, q int32) hpsdr.ReceiveSample {
 	}
 }
 
-// TestToIQInterleavesTheValues is the layout that Pipeline.IQData takes: I and Q of one sample
-// stand beside each other.
-func TestToIQInterleavesTheValues(t *testing.T) {
+// TestToIQPutsTheQFieldFirst holds the order of the two parts, which a measurement with a
+// Hermes-Lite 2 gave: the field that the protocol calls Q is the real part of the sample, and the
+// pipeline takes the real part first. See toIQ.
+//
+// **This test cannot find that order, it can only hold it.** Each sample of this file comes from
+// the same assumption that toIQ uses, so a test of this kind agrees with itself whatever the order
+// is. Only a device or a recording of one says which order is right.
+func TestToIQPutsTheQFieldFirst(t *testing.T) {
 	samples := []hpsdr.ReceiveSample{
-		sample(0x7FFFFF, 0),        // the largest positive value of I
-		sample(0, -0x800000),       // the largest negative value of Q
-		sample(0x400000, 0x400000), // one half of the largest value
+		sample(0x7FFFFF, 0),        // the largest positive value in the field of I
+		sample(0, -0x800000),       // the largest negative value in the field of Q
+		sample(0x400000, 0x400000), // one half of the largest value in both
 	}
 
 	result := toIQ(nil, samples)
 
 	require.Len(t, result, 6)
-	assert.InDelta(t, 1.0, result[0], 0.001, "I of the first sample")
-	assert.InDelta(t, 0.0, result[1], 0.001, "Q of the first sample")
-	assert.InDelta(t, 0.0, result[2], 0.001, "I of the second sample")
-	assert.InDelta(t, -1.0, result[3], 0.001, "Q of the second sample")
-	assert.InDelta(t, 0.5, result[4], 0.001, "I of the third sample")
-	assert.InDelta(t, 0.5, result[5], 0.001, "Q of the third sample")
+	assert.InDelta(t, 0.0, result[0], 0.001, "the real part of the first sample is its Q field")
+	assert.InDelta(t, 1.0, result[1], 0.001, "and the imaginary part is its I field")
+	assert.InDelta(t, -1.0, result[2], 0.001, "the real part of the second sample")
+	assert.InDelta(t, 0.0, result[3], 0.001, "and its imaginary part")
+	assert.InDelta(t, 0.5, result[4], 0.001, "both parts of the third sample")
+	assert.InDelta(t, 0.5, result[5], 0.001)
 }
 
 // TestToIQKeepsTheSign covers the byte order and the sign: the value of the device is signed, and a
@@ -43,8 +48,8 @@ func TestToIQKeepsTheSign(t *testing.T) {
 	result := toIQ(nil, []hpsdr.ReceiveSample{sample(-1, 1)})
 
 	require.Len(t, result, 2)
-	assert.Less(t, result[0], float32(0), "the I of −1 must be negative")
-	assert.Greater(t, result[1], float32(0), "the Q of 1 must be positive")
+	assert.Greater(t, result[0], float32(0), "the Q field of 1 gives the real part")
+	assert.Less(t, result[1], float32(0), "the I field of −1 gives the imaginary part")
 	assert.InDelta(t, 0.0, result[0], 0.001, "and both must be near zero")
 	assert.InDelta(t, 0.0, result[1], 0.001)
 }
