@@ -267,6 +267,8 @@ func (t *TrackerStage[S, F]) updateSignals(sequence uint64) {
 		}
 	}
 	t.signals = kept
+
+	t.mergeCloseChannels()
 }
 
 func (t *TrackerStage[S, F]) transition(signal *trackedSignal[F], sequence uint64) bool {
@@ -274,6 +276,13 @@ func (t *TrackerStage[S, F]) transition(signal *trackedSignal[F], sequence uint6
 
 	if signal.channel.State == core.NewChannel {
 		if t.isCW(signal, sequence) {
+			// One station gives more than one candidate, see mergeCloseChannels. The channel that
+			// exists keeps it, and the candidate goes away without an event: no listener knows it
+			// yet, so a pair of ChannelCreated and ChannelDestroyed would say nothing.
+			if t.hasChannelNear(signal) {
+				return false
+			}
+
 			t.confirm(signal)
 			return true
 		}
@@ -331,6 +340,90 @@ func (t *TrackerStage[S, F]) isCW(signal *trackedSignal[F], sequence uint64) boo
 	}
 
 	return signal.minAutocorrelation(t.maxLag) <= t.config.MaxAutocorrelation
+}
+
+// mergeCloseChannels holds the invariant that no two channels stand closer than MatchWidth. That
+// width is the distance inside which two channels decode the same signal, see matchWidthHz, so two
+// channels inside it are one station and the receiver must give one spot of it and not two.
+//
+// **matchPeak alone does not hold that invariant.** It keeps a new signal away from a signal that
+// exists, and nothing ever removes a duplicate that exists already. Two ways make one:
+//
+//   - The width of a candidate, CandidateMatchWidth, is 2 bins and thus 23.4 Hz, while the width of
+//     a channel is 100 Hz. peakMergeWidthHz is 40 Hz, so two peak groups of one frame always stand
+//     at least 40 Hz apart, and a station whose spectrum gives a second group therefore gives a
+//     second candidate. channelNear in transition catches that case, before the candidate becomes a
+//     channel.
+//   - Two channels that are born farther apart than MatchWidth drift towards each other, because
+//     follow pulls both of them onto the peak of the same station. This method catches that case.
+//
+// Section 6.6 of doc/architecture.md holds the measurement behind both.
+//
+// It merges one pair for each frame. A further pair comes 21 ms later in the next frame, and a
+// recording of a full band holds a few such pairs at most, so the invariant holds after a few
+// frames.
+//
+// ponytail: the scan is O(n²) over the channels, and n is the count of the channels of one receiver,
+// thus tens. A sort by frequency would make it O(n log n), and it would need a buffer that lives as
+// long as the stage.
+func (t *TrackerStage[S, F]) mergeCloseChannels() {
+	for i := range t.signals {
+		if t.signals[i].channel.State == core.NewChannel {
+			continue
+		}
+
+		for j := i + 1; j < len(t.signals); j++ {
+			if t.signals[j].channel.State == core.NewChannel {
+				continue
+			}
+			if math.Abs(t.signals[i].frequency-t.signals[j].frequency) >= float64(t.config.CandidateMatchWidth) {
+				continue
+			}
+
+			// the younger of the two goes, so the older one keeps its ID and everything that hangs
+			// on it, see remove
+			loser := j
+			if t.signals[j].firstFrame < t.signals[i].firstFrame {
+				loser = i
+			}
+			t.remove(loser)
+			return
+		}
+	}
+}
+
+// hasChannelNear tells if a channel stands closer to the given signal than CandidateMatchWidth. A
+// signal that is not a channel yet is no answer: two candidates that stand close together go their
+// own way until one of them becomes a channel.
+func (t *TrackerStage[S, F]) hasChannelNear(signal *trackedSignal[F]) bool {
+	for _, other := range t.signals {
+		if other == signal || other.channel.State == core.NewChannel {
+			continue
+		}
+		if math.Abs(other.frequency-signal.frequency) < float64(t.config.CandidateMatchWidth) {
+			return true
+		}
+	}
+	return false
+}
+
+// remove takes the signal at the given index out and tells the listeners that its channel is gone.
+// The signal is always a channel here and never a candidate: a candidate goes away without an event,
+// because no listener knows it.
+//
+// **The older of the two survives**, so everything that hangs on the ID of a channel stays: the hits
+// of its callsign, the quality of its spot, the spot itself in the DX cluster, and the state of its
+// decoder. The survivor also keeps its own frequency. Moving it onto the frequency of the stronger
+// of the two looks better and it is worse: a measurement over the 71 transcriptions gave a worse
+// error rate at each of the three places where it happened, and it made the copy of −3667 Hz of
+// test_14018_12k.iq and of −1958 Hz of the contest recording worse.
+func (t *TrackerStage[S, F]) remove(index int) {
+	signal := t.signals[index]
+
+	t.setState(signal, core.DeadChannel)
+	t.reporter.emitChannelDestroyed(signal.channel)
+
+	t.signals = append(t.signals[:index], t.signals[index+1:]...)
 }
 
 func (t *TrackerStage[S, F]) confirm(signal *trackedSignal[F]) {

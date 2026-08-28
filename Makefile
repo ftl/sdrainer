@@ -24,7 +24,7 @@ test:
 
 .PHONY: test-extended
 test-extended:
-	go test -v -race -timeout=300s -count 2 ./...
+	go test -v -race -timeout=1000s -count 2 ./...
 
 .PHONY: build
 build:

@@ -998,43 +998,80 @@ split one station therefore have envelopes that **alternate**, and the measure
 points the wrong way. The values of a pair overlap the values of an unrelated
 pair, so no threshold separates them.
 
-#### The proposal
+**A merge at `matchWidthHz`.** This is the value that the first proposal named,
+because the comment of `matchWidthHz` says that it is the width inside which two
+channels decode the same signal. A measurement over the 71 transcriptions of the
+four recordings says that the comment is too generous.
 
-**Make "no two channels closer than `matchWidthHz`" an invariant of the set of
-signals, and not only a rule of `matchPeak`.** The configuration already declares
-that width as the distance inside which two channels decode the same signal, so
-the tracker only has to hold what the value already says.
+`test_14018_12k.iq` holds two stations at −3683 Hz and −3729 Hz, thus 46 Hz
+apart. They are two stations and not one: they send at 31 WPM and at 25 WPM, and
+the transcription of −3667 Hz belongs to the weaker of the two. A merge at
+`matchWidthHz` removes that station, and its error rate goes from 0.231 to 0.462
+— the best copy of that recording.
 
-- After the transitions of a frame, in `updateSignals`, walk the confirmed
-  signals by frequency and merge each adjacent pair that stands closer than
-  `MatchWidth`. The same rule at the moment of `confirm` catches the pairs whose
-  two halves confirm at different times, which is 4 of the 6 pairs of the
-  recording; the sweep over the whole set is what catches the two that confirm in
-  the same frame.
-- The channel that goes away gives `ChannelDestroyed`, so the callsign stage, the
-  qualities, the decode stage and the DX cluster clean up: each of them handles
-  that event already, and the cluster takes its spot back with it.
-- Merging the envelopes with an OR restores the duty cycle of the survivor,
-  because the two halves split the peaks of the station between them.
+**And the distance alone cannot separate the two cases at a wider value.** At the
+moment at which the second half of a pair appeared, the pairs of one station stood
+20, 22, 42, 67 and 99 Hz apart, and the two stations of `test_14018_12k.iq` stood
+28 Hz apart. The two ranges lie inside each other, so no threshold above the
+jitter of a peak separates them.
 
-**Which of the two survives is the one open question, and it needs a
-measurement.** The stronger one gives the better copy in five of the six pairs,
-and 54/13 is the counter-example: −3363.5 Hz at 21.1 dB gives 0.707 and −3478.2
-Hz at 13.3 dB gives 0.488. The candidates for the rule are the higher mean SNR,
-the higher count of the detections, and the older channel — the last one keeps
-the hits of the callsign and the spot that the cluster already holds.
+**Moving the survivor onto the stronger of the two frequencies.** One of the two
+halves stands on the carrier and the other on a sideband of the keying, and the
+one on the sideband gives a weaker peak: a pair of the contest recording gives
+30.6 dB against 21.5 dB, and another 32.1 against 14.4. The mean SNR therefore
+looks like the way to keep the better of the two frequencies.
 
-**Two limits of a merge at `matchWidthHz` are known before the work begins.**
-The pair −3364/−3478 stands 114.6 Hz apart and it would not merge, although it is
-one station. A wider value is no answer: `test_14018_12k.iq` holds IZ1DXS at
-−3452 Hz and HB9AVE at −3322 Hz, thus 130 Hz apart, and those are two stations
-that must keep their own channel. The width therefore stays where it is, and a
-pair that stands between 100 Hz and 141 Hz is what this proposal does not solve.
+It is measured and it is worse. The rule fired at three places over the four
+recordings, and each of the three made the copy worse: −3667 Hz of
+`test_14018_12k.iq` went from 0.231 to 0.462, and −1958 Hz of the contest
+recording from 0.277 to 0.319. A higher peak is not a better copy.
 
-**The measurement that decides the work** is the character error rate of all 71
-transcriptions of the four recordings. A merge that removes a channel must not
-make any of them worse, and the six pairs of the contest recording must keep
-their value: both files of a pair then point at the one channel that is left.
+#### What the tracker does
+
+**The width of the merge is `CandidateMatchWidth`, thus the jitter of a measured
+peak.** Two channels inside that distance are one peak of one station, whatever
+else is true, and that is the widest value that the measurement allows.
+
+- `hasChannelNear` in `transition` stops a candidate that stands on a channel
+  before it becomes one. The candidate goes away without an event, because no
+  listener knows it yet and a pair of `ChannelCreated` and `ChannelDestroyed`
+  would say nothing.
+- `mergeCloseChannels` runs after the transitions of each frame and merges one
+  pair of channels. That is the case of two channels that were born farther apart
+  and drifted together, because `follow` pulls both of them onto the peak of the
+  same station.
+- **The older of the two survives**, and it keeps its own frequency. Everything
+  that hangs on the ID of a channel therefore stays: the hits of its callsign, the
+  quality of its spot, the spot itself in the DX cluster, and the state of its
+  decoder. The younger one gives `ChannelDestroyed`, and each consumer of that
+  event cleans up.
+
+#### What it gives, and what is left
+
+The contest recording goes from 62 channels to 60, and `test_14018_12k.iq` and
+the two other recordings keep their count. **Two of the six pairs merge**:
+−11573/−11578 and −7447/−7463, thus the two that stood 20.4 Hz and 22.3 Hz apart
+when the second half appeared.
+
+No transcription of the four recordings gets worse. The values that move between
+a run before and a run after stay inside the range that the same transcription
+gives from run to run anyway, which section 12 holds, and no limit of
+`maxTranscriptionErrorRate` moves.
+
+**Four pairs are left**: −1958/−1971, −3364/−3478, 14034/14124 and 16515/16544.
+They stood 42 to 99 Hz apart at the moment of the merge, thus in the range where
+the distance says nothing.
+
+The cost of those four is small and it is not a wrong spot. The DX cluster holds
+its spots by callsign and it rounds the frequency of a spot to whole kHz, see
+`newSpotHash` and `activeSpots`, so two channels of one station give one spot and
+not two. What is left is a second channel in the list of a consumer, and the work
+of a second decoder.
+
+**A merge of those four needs evidence that the tracker does not have.** The
+question is whether two channels read the same text, and only the decode tier and
+the callsign stage know that. A rule over the decoded text of two channels is the
+next step, and it is a step that the tracker cannot take alone.
 
 ## 7. The component: `cw`
 

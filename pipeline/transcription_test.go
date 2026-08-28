@@ -195,13 +195,15 @@ const (
 //	_17530.txt       0.275–0.353  0.41   30 wpm, 17.9 dB
 //	_18981.txt       0.593–0.593  0.68   34 wpm, 16.1 dB
 //
-// **Six of the 54 transcriptions come in pairs with the same text**, thus three pairs of files that
-// hold the same text twice, and their limits are the same value twice for the same reason: the
-// tracker made two channels of one station, and `sdrainer prepare` therefore wrote two WAV files of
-// the same signal. Section 6.6 of doc/architecture.md holds the analysis. The pairs are
-// −11573/−11578, −7447/−7463, −1958/−1971, −3364/−3478, 14034/14124 and 16515/16544. They stay as
-// they are until the tracker merges such channels: they are a correct measurement of what the
-// pipeline does today, and the fix must not change their error rate.
+// **Twelve of the 54 transcriptions come in six pairs with the same text**, and both limits of a
+// pair are the same value for the same reason: the tracker made two channels of one station, and
+// `sdrainer prepare` therefore wrote two WAV files of the same signal. Section 6.6 of
+// doc/architecture.md holds the analysis.
+//
+// The tracker merges two of the six pairs, −11573/−11578 and −7447/−7463. The four that are left
+// are −1958/−1971, −3364/−3478, 14034/14124 and 16515/16544. Both files of a pair keep their limit,
+// whether the pair merged or not: the test takes each channel inside transcriptionTolerance of an
+// offset, so both files of a merged pair point at the one channel that is left.
 //
 // **Two limits guard almost nothing**, because their transcription is very short: _11323.txt holds
 // 13 characters and gives 0.846, and _-19218.txt holds 9 characters and gives 0.778. One wrong

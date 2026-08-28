@@ -476,3 +476,109 @@ func TestTrackerConfirmsARealKeyingPattern(t *testing.T) {
 
 	assert.Contains(t, reporter.kinds(), "created")
 }
+
+// trackerFrames sends count frames with the given frequencies, which move by step for each frame.
+// It gives the sequence that comes next.
+func trackerFrames(tracker *TrackerStage[float32, float64], from uint64, count int, present func(int) bool, frequencies []float64, steps []float64) uint64 {
+	current := slices.Clone(frequencies)
+	sequence := from
+	for i := range count {
+		if present(i) {
+			tracker.Process(trackerFrame(sequence, current...))
+		} else {
+			tracker.Process(trackerFrame(sequence))
+		}
+		for j := range current {
+			current[j] += steps[j]
+		}
+		sequence++
+	}
+	return sequence
+}
+
+// TestTrackerMergesTwoChannelsThatDriftTogether covers the second way to one station in two
+// channels: both are born farther apart than the width of a candidate, and follow then pulls both of
+// them onto the peak of the same station. See mergeCloseChannels.
+func TestTrackerMergesTwoChannelsThatDriftTogether(t *testing.T) {
+	config := testTrackerConfig()
+	config.MaxDrift = 100 // Hz for each second, thus 2 Hz for each frame of 20 ms
+	tracker, reporter := newTrackerStage(t, config)
+
+	// both stand far enough apart for two channels of their own
+	sequence := trackerFrames(tracker, 0, confirmFrames(config), keying(2, 3),
+		[]float64{7020000, 7020080}, []float64{0, 0})
+	require.Equal(t, []string{"created", "created"}, reporter.kinds(), "two peaks give two channels")
+	require.Len(t, tracker.Channels(), 2)
+
+	// and they then move towards each other, until they stand closer than the jitter of a peak
+	trackerFrames(tracker, sequence, 40, keying(2, 3),
+		[]float64{7020000, 7020080}, []float64{2, -2})
+
+	channels := tracker.Channels()
+	require.Len(t, channels, 1, "two channels of one station become one")
+	assert.Equal(t, core.ChannelID("1"), channels[0].ID, "the older of the two survives")
+
+	destroyed := 0
+	for _, event := range reporter.events {
+		if event.kind == "destroyed" {
+			destroyed++
+			assert.Equal(t, core.ChannelID("2"), event.id, "the younger one gives the event")
+		}
+	}
+	assert.Equal(t, 1, destroyed, "the channel that goes away gives exactly one ChannelDestroyed")
+}
+
+// TestTrackerKeepsTwoStationsBesideEachOther is the guard of the merge: two stations that stand
+// farther apart than the jitter of a peak are two stations, and the merge must not take one of them
+// away.
+//
+// The distance is the distance of the two stations at −3683 Hz and −3729 Hz of
+// test_14018_12k.iq. They send at 31 WPM and at 25 WPM, so they are two stations, and a merge at
+// MatchWidth removed the weaker of the two: its error rate went from 0.231 to 0.462. Section 6.6 of
+// doc/architecture.md holds that measurement.
+func TestTrackerKeepsTwoStationsBesideEachOther(t *testing.T) {
+	config := testTrackerConfig()
+	tracker, reporter := newTrackerStage(t, config)
+
+	const distance = 46.0
+	require.Greater(t, distance, config.CandidateMatchWidth, "the two stand farther apart than the jitter of a peak")
+	require.Less(t, distance, config.MatchWidth, "and closer than the width of a channel")
+
+	trackerFrames(tracker, 0, 4*confirmFrames(config), keying(2, 3),
+		[]float64{7020000, 7020000 + distance}, []float64{0, 0})
+
+	assert.Len(t, tracker.Channels(), 2, "two stations keep their own channel")
+	assert.NotContains(t, reporter.kinds(), "destroyed")
+}
+
+// TestTrackerGivesNoChannelForACandidateOnAChannel covers the first way to one station in two
+// channels: peakMergeWidthHz is wider than the width of a candidate, so a station whose spectrum
+// gives a second peak group also gives a second candidate. That candidate must go away without an
+// event, because no listener knows it yet.
+func TestTrackerGivesNoChannelForACandidateOnAChannel(t *testing.T) {
+	config := testTrackerConfig()
+	tracker, reporter := newTrackerStage(t, config)
+
+	trackerFrames(tracker, 0, confirmFrames(config), keying(2, 3), []float64{7020000}, []float64{0})
+	require.Equal(t, []string{"created"}, reporter.kinds())
+	channel := tracker.signals[0]
+
+	// a candidate of the same station, inside the jitter of a peak
+	candidate := &trackedSignal[float64]{
+		channel:   core.Channel[float64]{State: core.NewChannel},
+		frequency: channel.frequency + config.CandidateMatchWidth/2,
+		envelope:  make([]bool, tracker.cwWindow),
+	}
+
+	assert.True(t, tracker.hasChannelNear(candidate), "the channel of the station stands beside it")
+
+	// and one that is far enough away for a channel of its own
+	far := &trackedSignal[float64]{
+		channel:   core.Channel[float64]{State: core.NewChannel},
+		frequency: channel.frequency + 2*config.CandidateMatchWidth,
+		envelope:  make([]bool, tracker.cwWindow),
+	}
+
+	assert.False(t, tracker.hasChannelNear(far))
+	assert.False(t, tracker.hasChannelNear(channel), "a channel does not stand beside itself")
+}
