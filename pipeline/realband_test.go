@@ -250,13 +250,16 @@ func analyseRecording(t *testing.T, filename string, sampleRate int, threshold f
 }
 
 func TestRealBandAnalysis(t *testing.T) {
-	for _, fixture := range []string{"test_14018_12k.iq", "test_14020_12k.iq", "test_14024_12k.iq"} {
+	for _, fixture := range analysedFixtures {
 		t.Run(fixture, func(t *testing.T) { analyseAndLog(t, "testdata/"+fixture) })
 	}
 }
 
 func analyseAndLog(t *testing.T, filename string) {
-	channels := analyseRecording(t, filename, 12000, DefaultPeakThreshold)
+	sampleRate, err := sampleRateOf(filename)
+	require.NoError(t, err)
+
+	channels := analyseRecording(t, filename, sampleRate, DefaultPeakThreshold)
 
 	t.Logf("%d channels", len(channels))
 	t.Logf("%9s %6s %6s %7s %7s %7d %6s %7s %7s", "Hz", "duty", "autoc", "maxSNR", "meanSNR", 0, "frames", "meanW", "maxW")
@@ -285,8 +288,18 @@ func TestRealBandThresholdSweep(t *testing.T) {
 /* the sweep of the lower limit of the duty cycle */
 
 // transcribedFixtures are the recordings with a transcription, so a sweep can measure what it costs
-// to remove a channel.
-var transcribedFixtures = []string{"test_14018_12k.iq", "test_14020_12k.iq"}
+// to remove a channel. Each of them holds its sample rate in its name, see sampleRateOf, so a
+// fixture that is not 12000 needs no change here.
+var transcribedFixtures = []string{"test_14018_12k.iq", "test_14020_12k.iq", "test_yo-hf-dx_1_48k.iq"}
+
+// analysedFixtures are every recording, so that TestRealBandAnalysis shows what the tracker made of
+// each of them.
+var analysedFixtures = []string{
+	"test_14018_12k.iq",
+	"test_14020_12k.iq",
+	"test_14024_12k.iq",
+	"test_yo-hf-dx_1_48k.iq",
+}
 
 // TestMinDutyCycleSweep measures what the lower limit of the duty cycle does. It gives the count of
 // the channels of each recording, and the character error rate of each transcription, so that a
@@ -308,7 +321,9 @@ func TestMinDutyCycleSweep(t *testing.T) {
 		var sum float64
 		var count int
 		for _, fixture := range transcribedFixtures {
-			decoded := decodeRecording(t, "testdata/"+fixture, 12000, option)
+			sampleRate, err := sampleRateOf(fixture)
+			require.NoError(t, err)
+			decoded := decodeRecording(t, "testdata/"+fixture, sampleRate, option)
 
 			transcriptions, err := filepath.Glob(filepath.Join("testdata", fixture) + "_*.txt")
 			require.NoError(t, err)

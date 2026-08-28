@@ -933,6 +933,109 @@ that holds none.
 > and a QSO where the running station transmits little gave the wrong callsign.
 > Now neither of the two callsigns of such an over counts.
 
+### 6.6 One station in two channels
+
+**Open, with the root cause measured.** A recording of the YO HF DX contest,
+`pipeline/testdata/test_yo-hf-dx_1_48k.iq`, gives 62 channels over 31 s, and six
+of its 54 transcriptions hold the same text twice: three of those pairs stand
+less than 30 Hz apart. The pairs are −11573/−11578, −7447/−7463, −1958/−1971,
+−3364/−3478, 14034/14124 and 16515/16544.
+
+#### The two causes
+
+**The width of a candidate is much narrower than the width of a channel.**
+`candidateMatchWidthBins` is 2 bins, thus 23.4 Hz, and `matchWidthHz` is 100 Hz.
+`peakMergeWidthHz` is 40 Hz, so two peak groups of one frame always stand at
+least 40 Hz apart. A station whose spectrum gives a second group in one frame —
+a strong one, a fast one, one that chirps — therefore gives a peak that lies
+outside the width of the candidate, and `matchPeak` makes a second candidate of
+it. Both candidates see the keying of the same station, so both reach
+`ConfirmCount` inside the same CW window and both become a channel.
+
+A measurement of the birth of each channel of that recording shows exactly that.
+Each pair is born farther apart than the width of a candidate, and each ends
+inside the width of a channel or near it:
+
+	pair    born apart  ends apart  SNR of the two  time
+	8/25       22.7 Hz      5.6 Hz  30.6 / 21.5 dB  both 1.7–30.2 s
+	43/33      25.3 Hz     16.7 Hz  28.2 / 14.4 dB  both 2.3–13.9 s
+	21/35      43.0 Hz     13.2 Hz  21.9 / 15.5 dB  both 1.8–29.7 s
+	31/30      66.8 Hz     28.6 Hz  14.6 / 13.9 dB  10.7–24.1 / 2.2–28.4 s
+	40/58     103.0 Hz     90.5 Hz  32.1 / 14.4 dB  15.9–29.7 / 6.4–30.4 s
+	54/13     114.9 Hz    114.6 Hz  21.1 / 13.3 dB  both 6.3–30.5 s
+
+**The tracker never merges two signals that it already holds.**
+`nearestSignal` keeps a *new* signal away from an existing one, and nothing ever
+removes a duplicate that exists. Both channels then live from the same station:
+each frame gives its peak to the nearer of the two, so both stay fed, neither
+runs into `DeadTimeout`, and `follow` pulls both towards the true peak until they
+stand a few Hz apart. Five of the six pairs end closer than `matchWidthHz`, thus
+inside the distance at which the configuration itself says that two channels
+decode the same signal.
+
+The text is the same because the decode tier takes the energy of `envelopeBins`,
+thus 3 bins of the decode tier, around the frequency of a channel. Those 3 bins
+are 141 Hz, so two channels that stand closer than that see the same keying.
+
+#### What does not work
+
+**Widening the width of a candidate to `matchWidthHz`.** That is the obvious
+fix, and section 6.3 holds the measurement against it: with the wide width the
+keying edges of a strong station become one candidate that reaches
+`ConfirmCount` together, and the scene of the demo gave a false channel 225 Hz
+beside a station. The width of a candidate must stay at the jitter of a peak.
+
+**The correlation of the two envelopes.** A pair that comes from one station
+looks like it must key together, so the correlation of the two envelopes at lag 0
+looks like the measure that separates one station in two channels from two
+stations. It is measured and it is wrong: every known pair gives a **negative**
+mean correlation (−0.41, −0.29, −0.32, −0.25, −0.12, −0.13), while unrelated
+pairs of `test_14018_12k.iq` reach +0.60.
+
+The reason is `matchPeak` itself: one frame gives its peak to the nearer signal
+only, so the other one gets `putEnvelope(false)` in that frame. Two channels that
+split one station therefore have envelopes that **alternate**, and the measure
+points the wrong way. The values of a pair overlap the values of an unrelated
+pair, so no threshold separates them.
+
+#### The proposal
+
+**Make "no two channels closer than `matchWidthHz`" an invariant of the set of
+signals, and not only a rule of `matchPeak`.** The configuration already declares
+that width as the distance inside which two channels decode the same signal, so
+the tracker only has to hold what the value already says.
+
+- After the transitions of a frame, in `updateSignals`, walk the confirmed
+  signals by frequency and merge each adjacent pair that stands closer than
+  `MatchWidth`. The same rule at the moment of `confirm` catches the pairs whose
+  two halves confirm at different times, which is 4 of the 6 pairs of the
+  recording; the sweep over the whole set is what catches the two that confirm in
+  the same frame.
+- The channel that goes away gives `ChannelDestroyed`, so the callsign stage, the
+  qualities, the decode stage and the DX cluster clean up: each of them handles
+  that event already, and the cluster takes its spot back with it.
+- Merging the envelopes with an OR restores the duty cycle of the survivor,
+  because the two halves split the peaks of the station between them.
+
+**Which of the two survives is the one open question, and it needs a
+measurement.** The stronger one gives the better copy in five of the six pairs,
+and 54/13 is the counter-example: −3363.5 Hz at 21.1 dB gives 0.707 and −3478.2
+Hz at 13.3 dB gives 0.488. The candidates for the rule are the higher mean SNR,
+the higher count of the detections, and the older channel — the last one keeps
+the hits of the callsign and the spot that the cluster already holds.
+
+**Two limits of a merge at `matchWidthHz` are known before the work begins.**
+The pair −3364/−3478 stands 114.6 Hz apart and it would not merge, although it is
+one station. A wider value is no answer: `test_14018_12k.iq` holds IZ1DXS at
+−3452 Hz and HB9AVE at −3322 Hz, thus 130 Hz apart, and those are two stations
+that must keep their own channel. The width therefore stays where it is, and a
+pair that stands between 100 Hz and 141 Hz is what this proposal does not solve.
+
+**The measurement that decides the work** is the character error rate of all 71
+transcriptions of the four recordings. A merge that removes a channel must not
+make any of them worse, and the six pairs of the contest recording must keep
+their value: both files of a pair then point at the one channel that is left.
+
 ## 7. The component: `cw`
 
 `cw` turns the energy of one channel into text. It has two parts.

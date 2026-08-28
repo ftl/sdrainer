@@ -131,24 +131,154 @@ const (
 //	_1951.txt       0.711–0.737  0.85   a weak station with a text that is not a call
 //	_3457.txt       0.314        0.36   the best copy of this recording
 //	_3828.txt       0.625–0.667  0.77   a weak station at 16.4 dB
+//
+// A measurement over 15 runs on 2026-08-28 gave these values for the fourth recording,
+// test_yo-hf-dx_1_48k.iq. It is a recording of a real contest, the YO HF DX contest, over 31 s of
+// the 20 m band at a sample rate of 48000, and it is the first fixture that does not use 12000. It
+// holds 54 transcriptions, thus more signals than the three recordings before it together, and the
+// band is full: a station stands beside a station over the whole spectrum.
+//
+// The limits stand approximately 15 % above the largest measured value, as for each other fixture.
+//
+//	_-19218.txt      0.778–0.778  0.89   35 wpm, 19.1 dB
+//	_-18438.txt      0.661–0.661  0.76   53 wpm, 10.0 dB
+//	_-17466.txt      0.358–0.377  0.43   28 wpm, 18.1 dB
+//	_-16474.txt      0.528–0.528  0.61   31 wpm, 27.5 dB
+//	_-14599.txt      0.244–0.244  0.28   25 wpm, 22.8 dB
+//	_-13875.txt      0.167–0.333  0.38   32 wpm, 20.0 dB
+//	_-13084.txt      0.292–0.292  0.34   34 wpm, 20.5 dB
+//	_-12472.txt      0.571–0.714  0.82   30 wpm, 16.2 dB
+//	_-11578.txt      0.200–0.200  0.23   39 wpm, 30.6 dB
+//	_-11573.txt      0.200–0.200  0.23   39 wpm, 30.6 dB
+//	_-10666.txt      0.096–0.115  0.13   30 wpm, 33.6 dB
+//	_-10264.txt      0.352–0.352  0.40   28 wpm, 37.4 dB
+//	_-9571.txt       0.122–0.135  0.16   34 wpm, 16.4 dB
+//	_-8474.txt       0.316–0.316  0.36   30 wpm, 10.1 dB
+//	_-7463.txt       0.208–0.333  0.38   25 wpm, 28.2 dB
+//	_-7447.txt       0.208–0.333  0.38   25 wpm, 28.2 dB
+//	_-7222.txt       0.274–0.290  0.33   28 wpm, 32.6 dB
+//	_-6771.txt       0.196–0.196  0.23   28 wpm, 20.4 dB
+//	_-5977.txt       0.311–0.333  0.38   23 wpm, 27.0 dB
+//	_-5464.txt       0.291–0.309  0.36   34 wpm, 40.0 dB
+//	_-4913.txt       0.214–0.214  0.25   29 wpm, 19.6 dB
+//	_-3978.txt       0.143–0.161  0.19   34 wpm, 28.2 dB
+//	_-3478.txt       0.488–0.488  0.56   26 wpm, 13.3 dB
+//	_-3364.txt       0.488–0.488  0.56   26 wpm, 13.3 dB
+//	_-2888.txt       0.244–0.267  0.31   24 wpm, 20.8 dB
+//	_-2569.txt       0.286–0.286  0.33   29 wpm, 26.7 dB
+//	_-1971.txt       0.255–0.277  0.32   30 wpm, 21.9 dB
+//	_-1958.txt       0.255–0.277  0.32   30 wpm, 21.9 dB
+//	_-1178.txt       0.438–0.438  0.50   33 wpm, 14.0 dB
+//	_-442.txt        0.172–0.207  0.24   36 wpm, 18.3 dB
+//	_521.txt         0.159–0.175  0.20   30 wpm, 37.1 dB
+//	_1198.txt        0.196–0.235  0.27   33 wpm, 32.7 dB
+//	_2028.txt        0.164–0.164  0.19   29 wpm, 29.7 dB
+//	_4158.txt        0.185–0.204  0.23   31 wpm, 21.6 dB
+//	_4928.txt        0.085–0.085  0.10   32 wpm, 23.7 dB
+//	_5637.txt        0.305–0.305  0.35   31 wpm, 22.0 dB
+//	_6823.txt        0.390–0.390  0.45   32 wpm, 14.3 dB
+//	_7277.txt        0.146–0.146  0.17   26 wpm, 10.7 dB
+//	_7527.txt        0.231–0.269  0.31   27 wpm, 22.9 dB
+//	_8795.txt        0.400–0.440  0.51   29 wpm, 12.0 dB
+//	_9527.txt        0.200–0.200  0.23   13 wpm, 24.5 dB
+//	_11323.txt       0.846–0.846  0.97   42 wpm, 10.0 dB
+//	_11499.txt       0.415–0.415  0.48   26 wpm, 14.5 dB
+//	_12758.txt       0.261–0.283  0.33   26 wpm, 18.7 dB
+//	_13532.txt       0.389–0.426  0.49   29 wpm, 14.1 dB
+//	_14034.txt       0.328–0.328  0.38   35 wpm, 32.1 dB
+//	_14124.txt       0.328–0.328  0.38   35 wpm, 32.1 dB
+//	_15028.txt       0.516–0.516  0.59   32 wpm, 34.1 dB
+//	_15516.txt       0.429–0.429  0.49   25 wpm, 28.1 dB
+//	_16515.txt       0.281–0.281  0.32   27 wpm, 14.6 dB
+//	_16544.txt       0.281–0.281  0.32   27 wpm, 14.6 dB
+//	_17026.txt       0.452–0.452  0.52   29 wpm, 18.3 dB
+//	_17530.txt       0.275–0.353  0.41   30 wpm, 17.9 dB
+//	_18981.txt       0.593–0.593  0.68   34 wpm, 16.1 dB
+//
+// **Six of the 54 transcriptions come in pairs with the same text**, thus three pairs of files that
+// hold the same text twice, and their limits are the same value twice for the same reason: the
+// tracker made two channels of one station, and `sdrainer prepare` therefore wrote two WAV files of
+// the same signal. Section 6.6 of doc/architecture.md holds the analysis. The pairs are
+// −11573/−11578, −7447/−7463, −1958/−1971, −3364/−3478, 14034/14124 and 16515/16544. They stay as
+// they are until the tracker merges such channels: they are a correct measurement of what the
+// pipeline does today, and the fix must not change their error rate.
+//
+// **Two limits guard almost nothing**, because their transcription is very short: _11323.txt holds
+// 13 characters and gives 0.846, and _-19218.txt holds 9 characters and gives 0.778. One wrong
+// character of a text of that length is 0.08 of the error rate. They stay in the set because the
+// test also asks that a channel exists at that offset at all.
 var maxTranscriptionErrorRate = map[string]float64{
-	"test_14018_12k.iq_-1224.txt": 0.78,
-	"test_14018_12k.iq_-2728.txt": 0.40,
-	"test_14018_12k.iq_-2986.txt": 0.51,
-	"test_14018_12k.iq_-3315.txt": 0.54,
-	"test_14018_12k.iq_-3667.txt": 0.27,
-	"test_14018_12k.iq_-4962.txt": 0.82,
-	"test_14020_12k.iq_-2040.txt": 0.26,
-	"test_14020_12k.iq_-3244.txt": 0.71,
-	"test_14020_12k.iq_-3954.txt": 0.34,
-	"test_14020_12k.iq_0.txt":     0.43,
-	"test_14020_12k.iq_196.txt":   0.74,
-	"test_14024_12k.iq_-1056.txt": 0.29,
-	"test_14024_12k.iq_-45.txt":   0.38,
-	"test_14024_12k.iq_482.txt":   0.49,
-	"test_14024_12k.iq_1951.txt":  0.85,
-	"test_14024_12k.iq_3457.txt":  0.36,
-	"test_14024_12k.iq_3828.txt":  0.77,
+	"test_yo-hf-dx_1_48k.iq_-19218.txt": 0.89,
+	"test_yo-hf-dx_1_48k.iq_-18438.txt": 0.76,
+	"test_yo-hf-dx_1_48k.iq_-17466.txt": 0.43,
+	"test_yo-hf-dx_1_48k.iq_-16474.txt": 0.61,
+	"test_yo-hf-dx_1_48k.iq_-14599.txt": 0.28,
+	"test_yo-hf-dx_1_48k.iq_-13875.txt": 0.38,
+	"test_yo-hf-dx_1_48k.iq_-13084.txt": 0.34,
+	"test_yo-hf-dx_1_48k.iq_-12472.txt": 0.82,
+	"test_yo-hf-dx_1_48k.iq_-11578.txt": 0.23,
+	"test_yo-hf-dx_1_48k.iq_-11573.txt": 0.23,
+	"test_yo-hf-dx_1_48k.iq_-10666.txt": 0.13,
+	"test_yo-hf-dx_1_48k.iq_-10264.txt": 0.40,
+	"test_yo-hf-dx_1_48k.iq_-9571.txt":  0.16,
+	"test_yo-hf-dx_1_48k.iq_-8474.txt":  0.36,
+	"test_yo-hf-dx_1_48k.iq_-7463.txt":  0.38,
+	"test_yo-hf-dx_1_48k.iq_-7447.txt":  0.38,
+	"test_yo-hf-dx_1_48k.iq_-7222.txt":  0.33,
+	"test_yo-hf-dx_1_48k.iq_-6771.txt":  0.23,
+	"test_yo-hf-dx_1_48k.iq_-5977.txt":  0.38,
+	"test_yo-hf-dx_1_48k.iq_-5464.txt":  0.36,
+	"test_yo-hf-dx_1_48k.iq_-4913.txt":  0.25,
+	"test_yo-hf-dx_1_48k.iq_-3978.txt":  0.19,
+	"test_yo-hf-dx_1_48k.iq_-3478.txt":  0.56,
+	"test_yo-hf-dx_1_48k.iq_-3364.txt":  0.56,
+	"test_yo-hf-dx_1_48k.iq_-2888.txt":  0.31,
+	"test_yo-hf-dx_1_48k.iq_-2569.txt":  0.33,
+	"test_yo-hf-dx_1_48k.iq_-1971.txt":  0.32,
+	"test_yo-hf-dx_1_48k.iq_-1958.txt":  0.32,
+	"test_yo-hf-dx_1_48k.iq_-1178.txt":  0.50,
+	"test_yo-hf-dx_1_48k.iq_-442.txt":   0.24,
+	"test_yo-hf-dx_1_48k.iq_521.txt":    0.20,
+	"test_yo-hf-dx_1_48k.iq_1198.txt":   0.27,
+	"test_yo-hf-dx_1_48k.iq_2028.txt":   0.19,
+	"test_yo-hf-dx_1_48k.iq_4158.txt":   0.23,
+	"test_yo-hf-dx_1_48k.iq_4928.txt":   0.10,
+	"test_yo-hf-dx_1_48k.iq_5637.txt":   0.35,
+	"test_yo-hf-dx_1_48k.iq_6823.txt":   0.45,
+	"test_yo-hf-dx_1_48k.iq_7277.txt":   0.17,
+	"test_yo-hf-dx_1_48k.iq_7527.txt":   0.31,
+	"test_yo-hf-dx_1_48k.iq_8795.txt":   0.51,
+	"test_yo-hf-dx_1_48k.iq_9527.txt":   0.23,
+	"test_yo-hf-dx_1_48k.iq_11323.txt":  0.97,
+	"test_yo-hf-dx_1_48k.iq_11499.txt":  0.48,
+	"test_yo-hf-dx_1_48k.iq_12758.txt":  0.33,
+	"test_yo-hf-dx_1_48k.iq_13532.txt":  0.49,
+	"test_yo-hf-dx_1_48k.iq_14034.txt":  0.38,
+	"test_yo-hf-dx_1_48k.iq_14124.txt":  0.38,
+	"test_yo-hf-dx_1_48k.iq_15028.txt":  0.59,
+	"test_yo-hf-dx_1_48k.iq_15516.txt":  0.49,
+	"test_yo-hf-dx_1_48k.iq_16515.txt":  0.32,
+	"test_yo-hf-dx_1_48k.iq_16544.txt":  0.32,
+	"test_yo-hf-dx_1_48k.iq_17026.txt":  0.52,
+	"test_yo-hf-dx_1_48k.iq_17530.txt":  0.41,
+	"test_yo-hf-dx_1_48k.iq_18981.txt":  0.68,
+	"test_14018_12k.iq_-1224.txt":       0.78,
+	"test_14018_12k.iq_-2728.txt":       0.40,
+	"test_14018_12k.iq_-2986.txt":       0.51,
+	"test_14018_12k.iq_-3315.txt":       0.54,
+	"test_14018_12k.iq_-3667.txt":       0.27,
+	"test_14018_12k.iq_-4962.txt":       0.82,
+	"test_14020_12k.iq_-2040.txt":       0.26,
+	"test_14020_12k.iq_-3244.txt":       0.71,
+	"test_14020_12k.iq_-3954.txt":       0.34,
+	"test_14020_12k.iq_0.txt":           0.43,
+	"test_14020_12k.iq_196.txt":         0.74,
+	"test_14024_12k.iq_-1056.txt":       0.29,
+	"test_14024_12k.iq_-45.txt":         0.38,
+	"test_14024_12k.iq_482.txt":         0.49,
+	"test_14024_12k.iq_1951.txt":        0.85,
+	"test_14024_12k.iq_3457.txt":        0.36,
+	"test_14024_12k.iq_3828.txt":        0.77,
 }
 
 // Two limits changed with the character of the decoder for a character that it cannot read, on
