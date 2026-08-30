@@ -19,6 +19,11 @@ type TrackerConfig[F dsp.Number] struct {
 	DeadTimeout         time.Duration // section 5 asks for 10 s to 30 s
 	MaxDrift            F             // Hz for each second, section 5 asks for approximately 1
 
+	// MinChannelSNR is the level in dB that the strongest peak of a channel must reach, and
+	// SNRReviewTime is how long it has to reach it. See reviewSNR.
+	MinChannelSNR float64
+	SNRReviewTime time.Duration
+
 	CWWindow           time.Duration // section 4.3 asks for 1 s to 2 s
 	MaxDutyCycle       float64       // a carrier, a beacon and a data mode are on all the time
 	MinKeyingRate      float64       // Hz, the slowest keying that is still CW, section 4.3 names 5 to 25
@@ -42,6 +47,13 @@ type trackedSignal[F dsp.Number] struct {
 	detections int
 	firstFrame uint64
 	lastFrame  uint64
+
+	// maxSNR is the strongest peak that this signal ever matched, in dB.
+	maxSNR float64
+
+	// reported holds that the listeners know this signal as a channel. reviewSNR takes it back and
+	// gives it again.
+	reported bool
 
 	// envelope holds for each frame of the CW window if the signal had energy in it. The duty
 	// cycle and the rate of the keying come from it.
@@ -127,6 +139,7 @@ type TrackerStage[S, F dsp.Number] struct {
 	candidateWindow  int
 	idleFrames       int
 	deadFrames       int
+	reviewFrames     int
 	maxDriftPerFrame float64
 }
 
@@ -140,6 +153,7 @@ func NewTrackerStage[S, F dsp.Number](config TrackerConfig[F], reporter channelR
 		candidateWindow:  framesFor(config.CWWindow, config.FrameInterval),
 		idleFrames:       framesFor(config.IdleTimeout, config.FrameInterval),
 		deadFrames:       framesFor(config.DeadTimeout, config.FrameInterval),
+		reviewFrames:     framesFor(config.SNRReviewTime, config.FrameInterval),
 		maxDriftPerFrame: float64(config.MaxDrift) * config.FrameInterval.Seconds(),
 	}
 }
@@ -163,7 +177,7 @@ func framesFor(duration time.Duration, interval time.Duration) int {
 func (t *TrackerStage[S, F]) Channels() []core.Channel[F] {
 	result := make([]core.Channel[F], 0, len(t.signals))
 	for _, signal := range t.signals {
-		if signal.channel.State != core.NewChannel {
+		if signal.reported {
 			result = append(result, signal.channel)
 		}
 	}
@@ -203,6 +217,7 @@ func (t *TrackerStage[S, F]) matchPeak(peak *dsp.Peak[S, F], frame *SpectralFram
 			firstFrame: frame.Sequence,
 			lastFrame:  frame.Sequence,
 			envelope:   make([]bool, t.cwWindow),
+			maxSNR:     snr,
 		})
 		return
 	}
@@ -221,6 +236,7 @@ func (t *TrackerStage[S, F]) matchPeak(peak *dsp.Peak[S, F], frame *SpectralFram
 	signal.frequency = t.follow(signal.frequency, float64(peak.SignalFrequency), frames)
 	signal.channel.Frequency = F(signal.frequency)
 	signal.channel.SNR = snr
+	signal.maxSNR = math.Max(signal.maxSNR, snr)
 }
 
 // follow moves the frequency of a signal towards the measured peak, with a limited step. This
@@ -275,26 +291,29 @@ func (t *TrackerStage[S, F]) transition(signal *trackedSignal[F], sequence uint6
 	silence := int(sequence - signal.lastFrame)
 
 	if signal.channel.State == core.NewChannel {
-		if t.isCW(signal, sequence) {
-			// One station gives more than one candidate, see mergeCloseChannels. The channel that
-			// exists keeps it, and the candidate goes away without an event: no listener knows it
-			// yet, so a pair of ChannelCreated and ChannelDestroyed would say nothing.
-			if t.hasChannelNear(signal) {
-				return false
-			}
-
-			t.confirm(signal)
-			return true
+		if !t.isCW(signal, sequence) {
+			// a candidate that never became a channel goes away without an event, because no
+			// listener knows it
+			return int(sequence-signal.firstFrame) < t.candidateWindow
 		}
-		// a candidate that never became a channel goes away without an event, because no listener
-		// knows it
-		return int(sequence-signal.firstFrame) < t.candidateWindow
+
+		// One station gives more than one candidate, see mergeCloseChannels. The channel that
+		// exists keeps it, and the candidate goes away without an event: no listener knows it
+		// yet, so a pair of ChannelCreated and ChannelDestroyed would say nothing.
+		if t.hasChannelNear(signal) {
+			return false
+		}
+
+		t.confirm(signal)
+		return true
 	}
+
+	t.reviewSNR(signal, sequence)
 
 	switch {
 	case silence >= t.deadFrames:
 		t.setState(signal, core.DeadChannel)
-		t.reporter.emitChannelDestroyed(signal.channel)
+		t.destroy(signal)
 		return false
 	case silence >= t.idleFrames:
 		t.setState(signal, core.IdleChannel)
@@ -380,10 +399,16 @@ func (t *TrackerStage[S, F]) mergeCloseChannels() {
 				continue
 			}
 
-			// the younger of the two goes, so the older one keeps its ID and everything that hangs
-			// on it, see remove
+			// The younger of the two goes, so the older one keeps its ID and everything that hangs
+			// on it, see remove. A signal whose channel reviewSNR took back always goes first: it
+			// carries no station, and its age must not cost the channel that does.
 			loser := j
-			if t.signals[j].firstFrame < t.signals[i].firstFrame {
+			switch {
+			case t.signals[i].reported != t.signals[j].reported:
+				if !t.signals[i].reported {
+					loser = i
+				}
+			case t.signals[j].firstFrame < t.signals[i].firstFrame:
 				loser = i
 			}
 			t.remove(loser)
@@ -421,15 +446,81 @@ func (t *TrackerStage[S, F]) remove(index int) {
 	signal := t.signals[index]
 
 	t.setState(signal, core.DeadChannel)
-	t.reporter.emitChannelDestroyed(signal.channel)
+	t.destroy(signal)
 
 	t.signals = append(t.signals[:index], t.signals[index+1:]...)
+}
+
+// reviewSNR takes the channel of a signal back when its peaks never reached MinChannelSNR, and it
+// gives the channel again when a strong peak arrives later.
+//
+// **A relative threshold alone has no answer outside the passband.** The detection compares each bin
+// against the noise floor of its own neighbourhood, see DetectionStage, and that is what a band with
+// a slope needs. Outside the passband of the receiver a recording holds no receiver noise at all: a
+// measurement of test_yo-hf-dx_3_48k.iq gives −113 dB inside the band and −252 dB outside it, thus
+// 139 dB lower, and the local floor follows down. The residue that is left still moves around its own
+// median, so a part of its bins still crosses the threshold, and the tracker made 33 channels of it
+// that carry no signal at all.
+//
+// **The strength of the peaks says what the place in the band does not.** A station outside the
+// passband is attenuated, and it is still a station: test_yo-hf-dx_1_48k.iq holds three transcribed
+// signals at −18438, −19218 and +18981 Hz whose local floor lies 98 to 114 dB below the median floor
+// of its band. A rule over the place in the band loses exactly those, and this rule keeps them.
+//
+// Over the 5 recordings of testdata the strongest peak of a channel of the residue reached 16.3 dB,
+// thus 6.3 dB above the threshold of 10 dB, and the weakest transcribed signal reached 19.2 dB, thus
+// 9.2 dB above it. minSNRMargin lies between the two.
+//
+// **The review comes after the confirmation and it never holds it back.** The moment of the
+// confirmation cannot decide: the transcribed signals begin at 13.4 dB there and the residue reaches
+// 20.0 dB, so the two overlap and no limit separates them. A rule that waits for a strong peak before
+// it confirms therefore costs the beginning of a transmission. The signal at −2040 Hz of
+// test_14020_12k.iq shows what that costs: it keys like CW at 16.8 dB, its channel would wait, and
+// the decoder would begin in the middle of the first transmission. Its error rate went from 0.185 to
+// 0.481, and the whole error of that signal is the first characters.
+//
+// The channel therefore comes at the same moment as before, and it goes away again after
+// SNRReviewTime if no strong peak ever arrived.
+//
+// **The signal stays tracked after that.** It keeps the peaks of its own frequency, so no new
+// candidate is born there and the noise gives its channel one time and not once for each review.
+//
+// A strong peak that arrives later gives the channel back. maxSNR only grows, so that answer never
+// flaps, and one signal then gives two channels one after the other. SNRReviewTime is long enough
+// that no recording of testdata needs it, and it stays as the answer for a station that shows its
+// first strong peak later than that: a second channel is better than a station that is lost.
+//
+// Section 6.7 of doc/architecture.md holds each of those measurements.
+func (t *TrackerStage[S, F]) reviewSNR(signal *trackedSignal[F], sequence uint64) {
+	if t.config.MinChannelSNR <= 0 {
+		return
+	}
+
+	strong := signal.maxSNR >= t.config.MinChannelSNR
+	switch {
+	case signal.reported && !strong && int(sequence-signal.firstFrame) >= t.reviewFrames:
+		signal.reported = false
+		t.reporter.emitChannelDestroyed(signal.channel)
+	case !signal.reported && strong:
+		signal.reported = true
+		t.reporter.emitChannelCreated(signal.channel)
+	}
+}
+
+// destroy tells the listeners that the channel of a signal is gone, if they know it at all.
+func (t *TrackerStage[S, F]) destroy(signal *trackedSignal[F]) {
+	if !signal.reported {
+		return
+	}
+	signal.reported = false
+	t.reporter.emitChannelDestroyed(signal.channel)
 }
 
 func (t *TrackerStage[S, F]) confirm(signal *trackedSignal[F]) {
 	t.nextID++
 	signal.channel.ID = core.ChannelID(strconv.Itoa(t.nextID))
 	signal.channel.State = core.ConfirmedChannel
+	signal.reported = true
 
 	t.reporter.emitChannelCreated(signal.channel)
 }
@@ -440,5 +531,7 @@ func (t *TrackerStage[S, F]) setState(signal *trackedSignal[F], state core.Chann
 	}
 
 	signal.channel.State = state
-	t.reporter.emitChannelStateChanged(signal.channel)
+	if signal.reported {
+		t.reporter.emitChannelStateChanged(signal.channel)
+	}
 }

@@ -1073,6 +1073,150 @@ question is whether two channels read the same text, and only the decode tier an
 the callsign stage know that. A rule over the decoded text of two channels is the
 next step, and it is a step that the tracker cannot take alone.
 
+### 6.7 The noise outside the passband of the receiver
+
+**The problem.** `pipeline/testdata/test_yo-hf-dx_3_48k.iq` gave 63 channels, and
+33 of them stood beyond ±21.3 kHz and carried no signal at all. They were not a
+few peaks of the noise: each of them lived over the whole recording, and each had
+a duty cycle of 0.13 to 0.21 and an autocorrelation near 0, so each passed the CW
+test of section 6.3 without trouble.
+
+#### The root cause
+
+**A relative threshold has no answer where there is no receiver noise.** The
+detection compares each bin against the noise floor of its own neighbourhood, see
+section 6.2, and that is exactly what a band with a slope or with a strong station
+at one end needs.
+
+The recording shows what that costs at the edge:
+
+```
+        band          floor
+  inside ±18 kHz     −113 dB
+  outside ±18 kHz    −252 dB
+```
+
+The receiver decimates to 48 kHz and its filter stops everything beyond
+±18.1 kHz, 139 dB down. What is left there is the residue of that filter and not
+the noise of a band. The moving median follows it down, so the local floor is
+correct — and the residue still moves around its own median, so a part of its bins
+still crosses the threshold of 10 dB. The tracker then sees a keying pattern that
+is indistinguishable from CW.
+
+#### What does not work
+
+**A rule over the place in the band.** The obvious answer is to ignore each bin
+whose local floor lies far below the median floor of the whole band. It is
+measured and it loses real stations: `test_yo-hf-dx_1_48k.iq` holds three
+**transcribed** signals at −18438, −19218 and +18981 Hz, thus outside the same
+±18.1 kHz, and their local floor lies 98, 114 and 107 dB below the median floor of
+their band. A station outside the passband is attenuated, and it is still a
+station.
+
+The 12 kHz recordings show the other side: their floor never falls more than
+26.8 dB below the median of their band, so no threshold above 30 dB touches them
+at all. The rule would be free for those three and wrong for the two that matter.
+
+**A limit at the moment of the confirmation.** The strength of the peaks does
+separate the two, but not at that moment: there the transcribed signals begin at
+13.4 dB and the residue reaches 20.0 dB, so the two ranges lie inside each other.
+
+**A limit that holds the channel back until a strong peak arrives.** This costs
+the beginning of a transmission. The signal at −2040 Hz of `test_14020_12k.iq`
+keys like CW at 16.8 dB, so its channel waited and its decoder began in the middle
+of the first transmission: the error rate went from 0.185 to **0.481**, and the
+whole error of that signal is its first characters.
+
+**Destroying such a channel and forgetting it.** The peaks are still there, so the
+next candidate is born at the same place and reaches the same end. A measurement
+gave more channels than before, not fewer.
+
+#### What the tracker does
+
+**The strength of the peaks decides, over the whole life of a channel, and it
+never holds the channel back.** `TrackerStage.reviewSNR`:
+
+- A channel comes at the same moment as before, so a weak station keeps the
+  beginning of its first transmission.
+- The tracker holds the strongest peak that each signal ever matched. After
+  `snrReviewTime`, thus 60 s, a channel whose strongest peak never reached
+  `PeakThreshold + minSNRMargin` goes away with `ChannelDestroyed`.
+- **The signal stays tracked.** It keeps the peaks of its own frequency, so no new
+  candidate is born there and the noise gives its channel one time and not once
+  for each review.
+- A strong peak that arrives later gives the channel back. `maxSNR` only grows, so
+  that answer never flaps.
+
+`minSNRMargin` is 10 dB, so the limit is 20 dB at the default threshold. The
+measurement over the 5 recordings, with the `maxSNR` of the tracker on both
+sides:
+
+```
+  the residue beyond ±21 kHz, 32 channels             at most  18.1 dB
+  the best channel of each of the 93 transcriptions   at least 22.6 dB
+```
+
+The value lies in the middle of that gap: 1.9 dB above the residue and 2.6 dB
+below the weakest transcribed signal.
+
+> **The first value of 8 dB came from two statistics that are not the same one.**
+> It compared the `maxSNR` of `analysedChannel`, which the analysis of a recording
+> collects for a channel, against the `maxSNR` of `trackedSignal`, which is what
+> the rule reads. The first one misses the peaks that a signal matched while it
+> was still a candidate, so it reads lower. The residue looked like it reached
+> 16.3 dB and it reaches 18.1 dB, and two channels of `test_yo-hf-dx_3_48k.iq`
+> then kept their channel at 18.1 dB against a limit of 18.0: +22301 Hz and
+> −23096 Hz. Measured with one statistic on both sides the gap is 4.5 dB and not
+> the 2.9 dB that the first measurement showed.
+
+**The 22 transcriptions of `test_yo-hf-dx_3_48k.iq` are what makes that
+measurement trustworthy.** They are the recording that holds the residue, so they
+are the hardest test of the value: the weakest of them reaches 23.3 dB, thus
+3.3 dB above the limit, and the weakest of all 93 is the 22.6 dB of one signal of
+`test_yo-hf-dx_1_48k.iq`.
+
+**It is a margin above the threshold and not a level**, because the peaks of the
+residue stand where the threshold lets them stand: a lower `--peak-threshold`
+moves both of them down together.
+
+**`snrReviewTime` is patient on purpose.** A transcribed signal reaches the limit
+at the moment of its confirmation in one half of the cases and inside 1.6 s in
+90 % of them, and the slowest of them needed 40.8 s. A value below that takes the
+channel of such a station back and gives it again a moment later, and one signal
+then gives two channels: with 15 s the four recordings with transcriptions gave 5
+of those, and `TestRealBandGivesOneChannelForOneSignal` failed for the station at
++1951 Hz. A skimmer runs for hours, so the cost of the patient value is that the
+noise outside the passband shows its channels for one minute after the start and
+never again.
+
+#### What it gives
+
+`test_yo-hf-dx_3_48k.iq` goes from **63 channels to 29**, and every channel beyond
+±21.3 kHz is gone. No transcription of the other four recordings gets worse.
+
+**The channels of that recording that go away carry no transcribed signal**: each
+of them stands farther from a transcription than the 150 Hz inside which the test
+looks for a channel. The other four recordings lose no channel at all.
+
+> **A channel that is younger than `snrReviewTime` still stands.** The recording is
+> 89 s long, so a channel that is born in its last minute never reaches its review
+> inside it: −993 Hz and +10481 Hz of that recording are noise and they stay. A
+> skimmer runs for hours and each of its channels reaches its review 60 s after its
+> birth, so this is a limit of a replay and not of the rule.
+
+**Two transcribed signals of that recording stand outside the passband**, and both
+keep their channel: −20248 Hz at 23.3 dB and +18811 Hz. Both hold the callsign
+EA5ITT, and one station does not send on two frequencies at the same time, so at
+least one of the two frequencies is not the frequency of that station. That is a
+question of its own, and it is not a question of this rule: the answer of the rule
+is right for both, because the peaks of both are far above the limit.
+
+> **A first look at that recording called +18811 Hz noise, and it was wrong.** It
+> had a duty cycle of 0.73 and a strongest peak of 31.1 dB, and its local floor
+> stood 115 dB below the median floor of its band. The floor made it look like the
+> residue, and the peaks said the opposite. The transcription of a human decided
+> it, and it is the reason why the place in the band decides nothing here.
+
 ## 7. The component: `cw`
 
 `cw` turns the energy of one channel into text. It has two parts.
@@ -1713,8 +1857,8 @@ the sample rates and the QSO.
 
 ### 12.2 The recording with the transcriptions
 
-Three recordings of a real band lie in `pipeline/testdata`, with the text that a
-human wrote for some of their signals. The name of a recording holds the sample
+Recordings of a real band lie in `pipeline/testdata`, with the text that a human
+wrote for some of their signals. The name of a recording holds the sample
 rate, and the name of a transcription holds the offset of its signal, so a test
 finds each of them without a list:
 
@@ -1731,6 +1875,12 @@ transcription is manual, see below.
 each channel, and a human then fills the files of the signals that are worth it.
 The test skips a file without text, so a session that is not finished breaks
 nothing.
+
+**A recording without a transcription is no failure either.** The test skips such
+a recording as a whole and it does not decode it, because a recording that says
+nothing costs a minute of the suite for nothing. Two ways lead to one: a session
+that a human did not begin, and a recording that another test uses.
+`test_yo-hf-dx_3_48k.iq` is a recording of the second kind.
 
 The test replays the whole recording with a center frequency of 0, so the
 frequency of a channel is the offset directly. For each transcription it takes

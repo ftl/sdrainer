@@ -224,6 +224,8 @@ func analyseRecording(t *testing.T, filename string, sampleRate int, threshold f
 		IdleTimeout:         derived.IdleTimeout,
 		DeadTimeout:         config.DeadTimeout,
 		MaxDrift:            config.MaxDrift,
+		MinChannelSNR:       derived.MinChannelSNR,
+		SNRReviewTime:       derived.SNRReviewTime,
 		CWWindow:            derived.CWWindow,
 		MaxDutyCycle:        config.MaxDutyCycle,
 		MinKeyingRate:       derived.MinKeyingRate,
@@ -299,6 +301,7 @@ var analysedFixtures = []string{
 	"test_14020_12k.iq",
 	"test_14024_12k.iq",
 	"test_yo-hf-dx_1_48k.iq",
+	"test_yo-hf-dx_3_48k.iq",
 }
 
 // TestMinDutyCycleSweep measures what the lower limit of the duty cycle does. It gives the count of

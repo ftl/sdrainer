@@ -106,6 +106,37 @@ const (
 	// as they did before.
 	candidateMatchWidthBins = 2
 
+	// minSNRMargin is how far above PeakThreshold the strongest peak of a channel must stand, in dB.
+	// A channel that never reaches it is noise, see TrackerStage.reviewSNR.
+	//
+	// The measurement over the 5 recordings of testdata, with the maxSNR of the tracker for both
+	// sides:
+	//
+	//	the residue outside the passband, 32 channels   at most  18.1 dB
+	//	the best channel of each of the 93 transcriptions  at least 22.6 dB
+	//
+	// The value lies in the middle of that gap: 20 dB stands 1.9 dB above the residue and 2.6 dB
+	// below the weakest transcribed signal.
+	//
+	// **It is a margin above the threshold and not a level.** The peaks of the residue stand where
+	// the threshold lets them stand, so a lower --peak-threshold moves both of them down together.
+	minSNRMargin = 10.0
+
+	// snrReviewTime is how long a channel has to show such a peak before the tracker takes it back.
+	// The channel comes at the same moment as before, so the decode of a weak station keeps the
+	// beginning of its first transmission, see TrackerStage.reviewSNR.
+	//
+	// **The value is patient on purpose.** A transcribed signal of testdata reaches the limit at the
+	// moment of its confirmation in one half of the cases and inside 1.6 s in 90 % of them, and the
+	// slowest of them needed 40.8 s. A value below that takes the channel of such a station back and
+	// gives it again a moment later, and one signal then gives two channels: with 15 s the four
+	// recordings with transcriptions gave 5 of those, and TestRealBandGivesOneChannelForOneSignal
+	// failed for the station at +1951 Hz. With this value none of them is left.
+	//
+	// The cost is small. A skimmer runs for hours, so the noise outside the passband shows its
+	// channels for one minute after the start and never again.
+	snrReviewTime = 60 * time.Second
+
 	// idleMargin makes the idle timeout longer than one word gap, because an operator makes pauses.
 	// Section 5 of the research document asks for that.
 	idleMargin = 1.5
@@ -200,6 +231,11 @@ type Derived struct {
 	MatchWidth          float64
 	CandidateMatchWidth float64
 
+	// MinChannelSNR is the level in dB that the strongest peak of a channel must reach, and
+	// SNRReviewTime is how long it has to reach it.
+	MinChannelSNR float64
+	SNRReviewTime time.Duration
+
 	CWWindow      time.Duration
 	IdleTimeout   time.Duration
 	MinKeyingRate float64
@@ -225,6 +261,8 @@ func Derive[F dsp.Number](config Config[F]) Derived {
 
 	result.PeakMergeWidth = binsFor(F(peakMergeWidthHz), result.BinWidth)
 	result.MatchWidth = matchWidthHz
+	result.MinChannelSNR = config.PeakThreshold + minSNRMargin
+	result.SNRReviewTime = snrReviewTime
 	result.CandidateMatchWidth = candidateMatchWidthBins * result.BinWidth
 
 	result.CWWindow = characterTime(config.MinWPM)
@@ -406,6 +444,8 @@ func New[S, F dsp.Number](config Config[F], scopeService core.ScopeService) *Pip
 		IdleTimeout:         derived.IdleTimeout,
 		DeadTimeout:         config.DeadTimeout,
 		MaxDrift:            config.MaxDrift,
+		MinChannelSNR:       derived.MinChannelSNR,
+		SNRReviewTime:       derived.SNRReviewTime,
 
 		CWWindow:           derived.CWWindow,
 		MaxDutyCycle:       config.MaxDutyCycle,

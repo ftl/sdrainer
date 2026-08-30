@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -581,4 +582,119 @@ func TestTrackerGivesNoChannelForACandidateOnAChannel(t *testing.T) {
 
 	assert.False(t, tracker.hasChannelNear(far))
 	assert.False(t, tracker.hasChannelNear(channel), "a channel does not stand beside itself")
+}
+
+// snrTrackerConfig turns the review of the SNR on. testTrackerConfig leaves MinChannelSNR at 0, so
+// each test that came before this one does not see the rule.
+func snrTrackerConfig() TrackerConfig[float64] {
+	config := testTrackerConfig()
+	config.MinChannelSNR = 18
+	config.SNRReviewTime = time.Second // 50 frames of 20 ms
+	return config
+}
+
+// trackerFrameWithSNR gives a frame whose peak stands the given distance above the noise floor.
+func trackerFrameWithSNR(sequence uint64, snr float64, frequency float64) *SpectralFrame[float32, float64] {
+	frame := trackerFrame(sequence, frequency)
+	frame.Peaks[0].SignalValue = float32(trackerNoiseFloor * math.Pow(10, snr/10))
+	return frame
+}
+
+// runFramesWithSNR sends count frames whose peak stands the given distance above the noise floor.
+func runFramesWithSNR(tracker *TrackerStage[float32, float64], from uint64, count int, snr float64, frequency float64, present func(int) bool) uint64 {
+	sequence := from
+	for i := range count {
+		if present(i) {
+			tracker.Process(trackerFrameWithSNR(sequence, snr, frequency))
+		} else {
+			tracker.Process(trackerFrame(sequence))
+		}
+		sequence++
+	}
+	return sequence
+}
+
+// TestTrackerTakesBackTheChannelOfWeakPeaks covers the noise outside the passband of the receiver:
+// it keys like CW, and its peaks never stand far above the threshold that let them through. See
+// reviewSNR.
+func TestTrackerTakesBackTheChannelOfWeakPeaks(t *testing.T) {
+	config := snrTrackerConfig()
+	tracker, reporter := newTrackerStage(t, config)
+
+	sequence := runFramesWithSNR(tracker, 0, confirmFrames(config), 12, 7020000, keying(2, 3))
+	require.Equal(t, []string{"created"}, reporter.kinds(), "the channel comes at the usual moment")
+
+	runFramesWithSNR(tracker, sequence, framesFor(config.SNRReviewTime, config.FrameInterval)+10, 12, 7020000, keying(2, 3))
+
+	assert.Contains(t, reporter.kinds(), "destroyed", "the channel goes away again")
+	assert.Empty(t, tracker.Channels(), "and no channel is left")
+}
+
+// TestTrackerKeepsTheChannelOfAStrongPeak is the other side: one peak far above the threshold makes
+// the channel of a station, whatever the rest of its peaks do.
+func TestTrackerKeepsTheChannelOfAStrongPeak(t *testing.T) {
+	config := snrTrackerConfig()
+	tracker, reporter := newTrackerStage(t, config)
+
+	sequence := runFramesWithSNR(tracker, 0, confirmFrames(config), 25, 7020000, keying(2, 3))
+	runFramesWithSNR(tracker, sequence, framesFor(config.SNRReviewTime, config.FrameInterval)+10, 25, 7020000, keying(2, 3))
+
+	assert.NotContains(t, reporter.kinds(), "destroyed")
+	assert.Len(t, tracker.Channels(), 1)
+}
+
+// TestTrackerReportsAWeakChannelWithoutADelay holds what the review must not do. A rule that waits
+// for a strong peak before it confirms costs the beginning of the first transmission: the signal at
+// −2040 Hz of test_14020_12k.iq keys like CW at 16.8 dB, and its error rate went from 0.185 to 0.481
+// while the decoder began in the middle of that transmission.
+func TestTrackerReportsAWeakChannelWithoutADelay(t *testing.T) {
+	withReview, reviewReporter := newTrackerStage(t, snrTrackerConfig())
+	withoutReview, plainReporter := newTrackerStage(t, testTrackerConfig())
+
+	for _, tracker := range []*TrackerStage[float32, float64]{withReview, withoutReview} {
+		runFramesWithSNR(tracker, 0, confirmFrames(snrTrackerConfig()), 12, 7020000, keying(2, 3))
+	}
+
+	require.Len(t, reviewReporter.events, 1)
+	require.Len(t, plainReporter.events, 1)
+	assert.Equal(t, "created", reviewReporter.events[0].kind)
+	assert.Equal(t, plainReporter.events[0].channel.Frequency, reviewReporter.events[0].channel.Frequency,
+		"the review gives the channel at the same moment as no review at all")
+}
+
+// TestTrackerGivesTheChannelBackForALateStrongPeak covers the station that is weak at first: the
+// review takes its channel back, and a strong peak that comes later gives it again.
+func TestTrackerGivesTheChannelBackForALateStrongPeak(t *testing.T) {
+	config := snrTrackerConfig()
+	tracker, reporter := newTrackerStage(t, config)
+
+	sequence := runFramesWithSNR(tracker, 0, confirmFrames(config), 12, 7020000, keying(2, 3))
+	sequence = runFramesWithSNR(tracker, sequence, framesFor(config.SNRReviewTime, config.FrameInterval)+10, 12, 7020000, keying(2, 3))
+	require.Contains(t, reporter.kinds(), "destroyed")
+
+	runFramesWithSNR(tracker, sequence, 10, 25, 7020000, keying(2, 3))
+
+	assert.Equal(t, "created", reporter.kinds()[len(reporter.kinds())-1], "the strong peak gives the channel back")
+	require.Len(t, tracker.Channels(), 1)
+	assert.Equal(t, core.ChannelID("1"), tracker.Channels()[0].ID, "and it is the same channel")
+}
+
+// TestTrackerKeepsTrackingASignalWhoseChannelIsGone holds that the noise gives its channel one time
+// and not once for each review: the signal stays and it keeps the peaks of its own frequency, so no
+// new candidate is born there.
+func TestTrackerKeepsTrackingASignalWhoseChannelIsGone(t *testing.T) {
+	config := snrTrackerConfig()
+	tracker, reporter := newTrackerStage(t, config)
+
+	reviewFrames := framesFor(config.SNRReviewTime, config.FrameInterval)
+	sequence := runFramesWithSNR(tracker, 0, confirmFrames(config), 12, 7020000, keying(2, 3))
+	sequence = runFramesWithSNR(tracker, sequence, reviewFrames+10, 12, 7020000, keying(2, 3))
+	require.Equal(t, "destroyed", reporter.kinds()[len(reporter.kinds())-1])
+	after := len(reporter.events)
+
+	// the noise goes on for three more review times
+	runFramesWithSNR(tracker, sequence, 3*reviewFrames, 12, 7020000, keying(2, 3))
+
+	assert.Len(t, reporter.events, after, "the signal that is left gives no further event")
+	assert.Empty(t, tracker.Channels())
 }
