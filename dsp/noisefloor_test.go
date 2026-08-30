@@ -189,8 +189,79 @@ func TestNoiseFloorSmoothsOverTime(t *testing.T) {
 	first := n.Update(low)
 	require.InDelta(t, 1, first[0], 1e-9, "the first frame must not be smoothed")
 
+	// the warm-up holds the level of its quietest frame, see warmUpTimeConstants, so this test
+	// gives it the same quiet frame until it is over
+	for range warmUpFramesFor(0.5) {
+		require.InDelta(t, 1, n.Update(low)[0], 1e-9, "a quiet warm-up must not move the estimate")
+	}
+
 	assert.InDelta(t, 6, n.Update(high)[0], 1e-9, "half of the step")
 	assert.InDelta(t, 8.5, n.Update(high)[0], 1e-9, "half of the rest")
+}
+
+func warmUpFramesFor(smoothing float64) int {
+	return warmUpTimeConstants * int(1/smoothing)
+}
+
+// TestNoiseFloorLeavesTheLevelOfABurstAtTheStart covers the stream that begins with a burst. The
+// first frame is the whole estimate, so without the warm-up that burst stays in it for many time
+// constants: a recording of a Hermes-Lite 2 kept a floor that was more than 3 dB too high for 26.2 s
+// of its 74 s. See warmUpTimeConstants.
+func TestNoiseFloorLeavesTheLevelOfABurstAtTheStart(t *testing.T) {
+	const blockSize = 64
+	const smoothing = 0.01
+	level := exponentialMedianFactor(5)
+
+	quiet := make(Block[float64], blockSize)
+	burst := make(Block[float64], blockSize)
+	for i := range quiet {
+		quiet[i] = level
+		burst[i] = 1000 * level // 30 dB above the band
+	}
+
+	n := NewNoiseFloor[float64](blockSize, 5, smoothing)
+
+	// the stream begins with the burst, over a part of the warm-up
+	warmUp := warmUpFramesFor(smoothing)
+	for range warmUp / 3 {
+		n.Update(burst)
+	}
+	require.Greater(t, n.Get()[0], 100.0, "the estimate stands far above the band while the burst holds")
+
+	// and the band is quiet for the rest of the warm-up
+	var out Block[float64]
+	for range warmUp {
+		out = n.Update(quiet)
+	}
+
+	assert.InDelta(t, 1, out[0], 0.05, "the estimate stands at the level of the band when the warm-up ends")
+}
+
+// TestNoiseFloorKeepsTheSlowFilterAfterTheWarmUp holds that the warm-up changes the level and never
+// the speed: an estimate that follows a level down quickly loses the noise between two marks of the
+// keying, see warmUpTimeConstants.
+func TestNoiseFloorKeepsTheSlowFilterAfterTheWarmUp(t *testing.T) {
+	const blockSize = 64
+	const smoothing = 0.01
+	level := exponentialMedianFactor(5)
+
+	quiet := make(Block[float64], blockSize)
+	loud := make(Block[float64], blockSize)
+	for i := range quiet {
+		quiet[i] = level
+		loud[i] = 100 * level
+	}
+
+	n := NewNoiseFloor[float64](blockSize, 5, smoothing)
+	for range warmUpFramesFor(smoothing) + 1 {
+		n.Update(quiet)
+	}
+	require.InDelta(t, 1, n.Get()[0], 1e-9)
+
+	// one loud frame after the warm-up moves the estimate by the smoothing factor and no more
+	out := n.Update(loud)
+
+	assert.InDelta(t, 1+smoothing*(100-1), out[0], 1e-6, "one frame moves the estimate by its factor")
 }
 
 func TestNoiseFloorWithAWrongBlockSize(t *testing.T) {

@@ -574,6 +574,53 @@ the demo:
 | 8 dB | 70 |
 | 6 dB | 1283 |
 
+#### The warm-up of the noise floor
+
+**The first frame decided the whole estimate.** `dsp.NoiseFloor` has nothing to
+smooth against at the start, so it took the first frame as its answer, and from
+then on its time filter of 3 s needed many time constants to leave a value that
+was wrong. A stream that begins with a burst therefore blinded the detection long
+after the burst was over, because each bin is compared against this floor.
+
+`pipeline/testdata/test_hpsdr_1_48k.iq`, a recording of a Hermes-Lite 2, shows it:
+its stream begins with approximately 1 s that stands **31.3 dB** above the level
+of its band, and the floor of that recording then stood more than 3 dB too high
+for **26.2 s of its 74 s**. `test_14020_12k.iq` of a KiwiSDR shows the same with
+8.6 dB and 5.8 s, and the other four recordings show none. The same path runs on
+`ResetNoiseFloor`, so a change of the center frequency pays it as well.
+
+**A burst lifts every bin at once, so the shape of the estimate is right and only
+its level is wrong.** The level is one number. `NoiseFloor` therefore collects the
+level of each frame of a warm-up of one time constant, and at the end it moves the
+whole estimate onto the **median** of those levels, one time. The filter itself
+never changes its speed.
+
+The median answers while less than one half of the warm-up holds the burst, and it
+answers with the level of the band and not with a value below it.
+
+**Three other ways were measured, and each is worse:**
+
+| The way | What it costs |
+|---|---|
+| the filter follows a level down 10 times faster, always | 6 channels for the 2 stations of one QSO of the demo scene |
+| the warm-up is only faster, by any factor from 2 | a channel beside a station that keys softly, where the test asks for none |
+| the warm-up takes the smallest value of each bin | the floor stands more than 3 dB **below** its own level for 1 to 2 s of four recordings |
+
+The first two fail for the same reason: the keying of CW makes the power of a
+channel fall in each gap, and an estimate that follows a level down quickly loses
+the noise between two marks.
+
+**The warm-up corrects only an error of more than 3 dB.** The level of the warm-up
+comes from a median over 64 bins of each frame, and the estimate of the filter
+comes from every bin of every frame, so inside a few dB the filter knows the band
+better. Correcting anyway costs: the copy of the signal at −13875 Hz of
+`test_yo-hf-dx_1_48k.iq` went from 0.133–0.333 over 10 runs to 0.300–0.400, and
+that recording begins with no burst at all.
+
+The result: the Hermes-Lite 2 recording goes from **26.2 s to 7.9 s**, the KiwiSDR
+recording from 5.8 s to 3.0 s, and no floor of the 6 recordings ever stands more
+than 3 dB below its own level.
+
 ### 6.3 `TrackerStage`
 
 The tracker makes a channel of each signal that stays, and it follows that
