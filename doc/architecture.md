@@ -874,8 +874,21 @@ Without it the search stops at that word: the join of `yo` and `dl1abc` is no
 callsign, and the pattern of a keyword on each side of the callsign never closes,
 so a station that calls that way gives no spot at all.
 
-**The word triggers nothing by itself.** Only `cq` and `test` make a call, see
-`callKeywords`, so a `yo` in the text of a QSO says as little as a `de`.
+**The word also closes a call, like `test`.** `dl1abc dl1abc cwt` is a whole call
+and it holds neither `cq` nor `test`, so a word that only fills the place between
+a keyword and the callsign would leave that station without a spot. The word
+therefore joins `trailingKeywords` as well, and a callsign before it counts.
+
+A measurement over the two recordings with `--contest=yo` shows what that costs:
+nothing. `test_yo-hf-dx_1_48k.iq` gives the same 10 callsigns with the rule and
+without it, and `test_yo-hf-dx_3_48k.iq` gives 1 to 3 from run to run in both
+cases, because its signals are weak.
+
+**It opens no call.** `cwt dl1abc` alone gives nothing, where `test dl1abc` does:
+the word stands for the contest and not for the invitation to answer, and a word
+of a contest at the beginning of a text is as often the end of the call before it.
+
+`cwt dl1abc test` therefore holds, and it holds through its trailing `test`.
 
 A measurement over the two recordings of the YO HF DX contest with `--contest=yo`:
 

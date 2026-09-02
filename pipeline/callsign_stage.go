@@ -34,6 +34,8 @@ var leadingKeywords = map[string]bool{
 
 // callKeywords are the two words that make a call by themselves. A channel that saw one of them
 // with a callsign holds a station that runs, and only then does "tu" count, see countWord.
+//
+// The word of a contest joins them, see CallsignStage.contest.
 var callKeywords = map[string]bool{
 	"cq":   true,
 	"test": true,
@@ -61,7 +63,8 @@ var fillerWords = map[string]bool{
 	"dx": true,
 }
 
-// trailingKeywords stand after the callsign of the running station, as in "a1bc test".
+// trailingKeywords stand after the callsign of the running station, as in "a1bc test". The word of a
+// contest joins them, see CallsignStage.contest and isTrailing.
 //
 // "tu" is not in this list. A running station finishes a QSO with "dl0xy tu", where the callsign
 // before "tu" belongs to the station that answered.
@@ -107,8 +110,14 @@ type CallsignStage[F dsp.Number] struct {
 	// for the callsign stops at it: the join of "yo" and "dl1abc" is no callsign, and the pattern of
 	// a keyword on each side of the callsign never closes.
 	//
-	// **It is no keyword of its own.** Only "cq" and "test" make a call, see callKeywords, so a "yo"
-	// somewhere in the text of a QSO still says nothing about which station runs.
+	// **It is the "test" of its contest, and it closes a call.** "dl1abc dl1abc cwt" is a call and
+	// it holds neither "cq" nor "test", so a word that only fills the place between a keyword and
+	// the callsign would leave that station without a spot. The word therefore joins
+	// trailingKeywords as well, and a callsign before it counts.
+	//
+	// **It opens no call.** "cwt dl1abc" alone gives nothing, as "test dl1abc" does give something:
+	// the word stands for the contest and not for the invitation to answer, and a word of a contest
+	// at the beginning of a text is as often the end of the call before it.
 	contest string
 }
 
@@ -286,7 +295,7 @@ func (d *callsignDetector) countWord(word string) bool {
 
 	// "a1bc test": this word says that the callsign is the word before it, and that callsign can
 	// also stand in pieces
-	if trailingKeywords[word] {
+	if d.isTrailing(word) {
 		if found, ok := d.callsignBefore(len(d.recent) - 1); ok {
 			d.hits[found.String()]++
 			d.countCall(word)
@@ -299,14 +308,20 @@ func (d *callsignDetector) countWord(word string) bool {
 
 // isFiller tells if a word holds only the place between a keyword and the callsign. The word of the
 // contest is such a word, see CallsignStage.contest.
+// isTrailing tells if a word closes a call, thus if the callsign of the running station stands
+// before it. The word of the contest does that, see CallsignStage.contest.
+func (d *callsignDetector) isTrailing(word string) bool {
+	return trailingKeywords[word] || (d.contest != "" && word == d.contest)
+}
+
 func (d *callsignDetector) isFiller(word string) bool {
 	return fillerWords[word] || (d.contest != "" && word == d.contest)
 }
 
-// countCall holds that this channel saw a call, if the given keyword is one of the two words that
-// make a call.
+// countCall holds that this channel saw a call, if the given keyword is one of the words that make a
+// call. The word of the contest is one of them, see CallsignStage.contest.
 func (d *callsignDetector) countCall(keyword string) {
-	if callKeywords[keyword] {
+	if callKeywords[keyword] || (d.contest != "" && keyword == d.contest) {
 		d.sawCall = true
 	}
 }
@@ -340,7 +355,7 @@ func (d *callsignDetector) lastLeadingKeyword() (int, bool) {
 // channel that already gave a hit with "cq" or "test" holds a station that runs, so only there does
 // "tu" say something.
 func (d *callsignDetector) keywordCounts(index int) bool {
-	if trailingKeywords[d.recent[index]] && d.ordinaryWordBefore(index) {
+	if d.isTrailing(d.recent[index]) && d.ordinaryWordBefore(index) {
 		return false
 	}
 	if d.recent[index] == "tu" && !d.sawCall {
@@ -359,7 +374,7 @@ func (d *callsignDetector) ordinaryWordBefore(index int) bool {
 	if before < 0 {
 		return false
 	}
-	return !leadingKeywords[d.recent[before]] && !trailingKeywords[d.recent[before]]
+	return !leadingKeywords[d.recent[before]] && !d.isTrailing(d.recent[before])
 }
 
 // minCallsignRepetitions is the count of the repetitions that repeatedCallsignAfter needs. An

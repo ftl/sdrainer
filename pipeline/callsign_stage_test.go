@@ -716,6 +716,10 @@ func TestCallsignStageTakesTheWordOfAContest(t *testing.T) {
 		{name: "cq and the word", contest: "yo", text: "cq yo a1bc cq yo a1bc "},
 		{name: "cq, the word and test", contest: "cwt", text: "cq cwt test a1bc cq cwt test a1bc "},
 		{name: "the word before test", contest: "cwt", text: "cq cwt test a1bc a1bc "},
+		// This one holds without the configuration too, and only by luck: the join of "cwt" and
+		// "a1bc" is no callsign because "a1bc" is longer than maxJoinedWordLength. With the
+		// configuration the join rejects "cwt" as a filler word, whatever its length is.
+		{name: "the word, the callsign and test", contest: "cwt", text: "cwt a1bc test cwt a1bc test "},
 		{name: "beside a filler word", contest: "yo", text: "cq yo de a1bc cq yo de a1bc "},
 		{name: "in upper case", contest: "YO", text: "cq yo a1bc cq yo a1bc "},
 		{name: "with a space around it", contest: " yo ", text: "cq yo a1bc cq yo a1bc "},
@@ -744,9 +748,39 @@ func TestCallsignStageTakesNoWordOfAContestAsACallsign(t *testing.T) {
 	assert.Empty(t, runCallsignStage("cq cwt test cq cwt test ", "cwt"))
 }
 
-// TestCallsignStageNeedsACallBesideTheWordOfAContest holds that the word of a contest triggers
-// nothing by itself. Only "cq" and "test" make a call, so a word of a contest in the text of a QSO
-// says as little as a "de", see the comment of fillerWords.
+// TestCallsignStageClosesACallWithTheWordOfAContest covers the call that holds neither "cq" nor
+// "test": "dl1abc dl1abc cwt" is the whole call of a station of that contest, and the word closes it
+// exactly as "test" closes "a1bc a1bc test".
+func TestCallsignStageClosesACallWithTheWordOfAContest(t *testing.T) {
+	tt := []struct {
+		name string
+		text string
+	}{
+		{name: "the callsign two times", text: "a1bc a1bc cwt a1bc a1bc cwt "},
+		{name: "the callsign one time", text: "a1bc cwt a1bc cwt "},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			detected := runCallsignStage(tc.text, "cwt")
+
+			require.NotEmptyf(t, detected, "%q is a call of that contest", tc.text)
+			assert.Equal(t, "A1BC", detected[len(detected)-1].String())
+
+			assert.Empty(t, runCallsignStage(tc.text), "and it gives nothing without the configuration")
+		})
+	}
+}
+
+// TestCallsignStageOpensNoCallWithTheWordOfAContest holds the other side: the word stands for the
+// contest and not for the invitation to answer, so it opens no call. A word of a contest at the
+// beginning of a text is as often the end of the call before it.
+func TestCallsignStageOpensNoCallWithTheWordOfAContest(t *testing.T) {
+	assert.Empty(t, runCallsignStage("cwt a1bc cwt a1bc ", "cwt"))
+}
+
+// TestCallsignStageNeedsACallBesideTheWordOfAContest holds that a word of a contest inside the text
+// of a QSO gives no callsign of its own: the callsign must stand beside it.
 func TestCallsignStageNeedsACallBesideTheWordOfAContest(t *testing.T) {
-	assert.Empty(t, runCallsignStage("tnx yo a1bc tnx yo a1bc ", "yo"))
+	assert.Empty(t, runCallsignStage("tnx 5nn yo tnx 5nn yo ", "yo"))
 }
