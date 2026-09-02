@@ -21,6 +21,7 @@ type Process struct {
 	recorder        *iq.Writer
 	centerFrequency float64
 	peakThreshold   float64
+	contest         string
 	scope           core.ScopeService
 	channelService  ChannelService
 	spotter         Spotter
@@ -36,7 +37,7 @@ type Process struct {
 
 // New connects to the given KiwiSDR and prepares the pipeline. It opens the client last, so that no
 // callback of the client can arrive before the values above are complete.
-func New(host string, username string, password string, centerFrequency float64, peakThreshold float64, scope core.ScopeService, channelService ChannelService, spotter Spotter, recorder *iq.Writer) (*Process, error) {
+func New(host string, username string, password string, centerFrequency float64, peakThreshold float64, contest string, scope core.ScopeService, channelService ChannelService, spotter Spotter, recorder *iq.Writer) (*Process, error) {
 	if scope == nil {
 		scope = &core.NullScopeService{}
 	}
@@ -51,6 +52,7 @@ func New(host string, username string, password string, centerFrequency float64,
 		recorder:        recorder,
 		centerFrequency: centerFrequency,
 		peakThreshold:   peakThreshold,
+		contest:         contest,
 		scope:           scope,
 		channelService:  channelService,
 		spotter:         spotter,
@@ -70,6 +72,7 @@ func New(host string, username string, password string, centerFrequency float64,
 func (p *Process) pipelineConfig(sampleRate int) pipeline.Config[float64] {
 	result := pipeline.DefaultConfig(sampleRate, p.centerFrequency)
 	result.PeakThreshold = p.peakThreshold
+	result.Contest = p.contest
 	return result
 }
 

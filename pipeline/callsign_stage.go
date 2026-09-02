@@ -42,6 +42,9 @@ var callKeywords = map[string]bool{
 // fillerWords stand between a leading keyword and the callsign, as in "cq dx a1bc" and
 // "cq de a1bc". The search for the callsign steps over them.
 //
+// The word of a contest joins them, see CallsignStage.contest. It is not in this map, because it
+// belongs to one run of SDRainer and not to the code.
+//
 // They are **not** keywords: a filler word counts nothing by itself, and it only holds the place
 // between a keyword and the callsign.
 //
@@ -94,6 +97,19 @@ type runningCallsignReporter[F dsp.Number] interface {
 type CallsignStage[F dsp.Number] struct {
 	reporter runningCallsignReporter[F]
 	channels map[core.ChannelID]*callsignDetector
+
+	// contest is the word that the operators of one contest put into their call, in lower case, or
+	// empty. It is a filler word like "de" and "dx": it holds the place between the keyword of the
+	// call and the callsign, and it says nothing by itself.
+	//
+	// **A contest gives each call a word of its own.** "cq cwt test dl1abc" holds "cwt" for the CWops
+	// Mini-CWT, and "cq yo dl1abc" holds "yo" for the YO HF DX contest. Without that word the search
+	// for the callsign stops at it: the join of "yo" and "dl1abc" is no callsign, and the pattern of
+	// a keyword on each side of the callsign never closes.
+	//
+	// **It is no keyword of its own.** Only "cq" and "test" make a call, see callKeywords, so a "yo"
+	// somewhere in the text of a QSO still says nothing about which station runs.
+	contest string
 }
 
 // callsignDetector holds the state of the search on one channel.
@@ -114,6 +130,9 @@ type callsignDetector struct {
 	// count.
 	sawCall bool
 
+	// contest is the word of the contest, see CallsignStage.contest.
+	contest string
+
 	hits map[string]int
 	best callsign.Callsign
 
@@ -122,15 +141,19 @@ type callsignDetector struct {
 	reportedValid bool
 }
 
-func NewCallsignStage[F dsp.Number](reporter runningCallsignReporter[F]) *CallsignStage[F] {
+// NewCallsignStage takes the word of the contest, or an empty string when no contest is running.
+// See CallsignStage.contest.
+func NewCallsignStage[F dsp.Number](reporter runningCallsignReporter[F], contest string) *CallsignStage[F] {
 	return &CallsignStage[F]{
 		reporter: reporter,
 		channels: make(map[core.ChannelID]*callsignDetector),
+		// the decoder gives its text in lower case
+		contest: strings.ToLower(strings.TrimSpace(contest)),
 	}
 }
 
 func (s *CallsignStage[F]) ChannelCreated(channel core.Channel[F]) {
-	s.channels[channel.ID] = &callsignDetector{hits: make(map[string]int)}
+	s.channels[channel.ID] = &callsignDetector{hits: make(map[string]int), contest: s.contest}
 }
 
 func (s *CallsignStage[F]) ChannelDestroyed(channel core.Channel[F]) {
@@ -274,6 +297,12 @@ func (d *callsignDetector) countWord(word string) bool {
 	return false
 }
 
+// isFiller tells if a word holds only the place between a keyword and the callsign. The word of the
+// contest is such a word, see CallsignStage.contest.
+func (d *callsignDetector) isFiller(word string) bool {
+	return fillerWords[word] || (d.contest != "" && word == d.contest)
+}
+
 // countCall holds that this channel saw a call, if the given keyword is one of the two words that
 // make a call.
 func (d *callsignDetector) countCall(keyword string) {
@@ -324,7 +353,7 @@ func (d *callsignDetector) keywordCounts(index int) bool {
 // word at the given index.
 func (d *callsignDetector) ordinaryWordBefore(index int) bool {
 	before := index - 1
-	for before >= 0 && fillerWords[d.recent[before]] {
+	for before >= 0 && d.isFiller(d.recent[before]) {
 		before--
 	}
 	if before < 0 {
@@ -350,7 +379,7 @@ const minCallsignRepetitions = 2
 // leading keyword, so this method never sees it.
 func (d *callsignDetector) repeatedCallsignAfter(index int) (callsign.Callsign, bool) {
 	from := index + 1
-	for from < len(d.recent) && fillerWords[d.recent[from]] {
+	for from < len(d.recent) && d.isFiller(d.recent[from]) {
 		from++
 	}
 	if len(d.recent)-from < minCallsignRepetitions {
@@ -400,7 +429,7 @@ func (d *callsignDetector) putWord(word string) {
 // word that stands between the keyword and the callsign.
 func (d *callsignDetector) callsignAfter(index int) (callsign.Callsign, bool) {
 	from := index + 1
-	for from < len(d.recent) && fillerWords[d.recent[from]] {
+	for from < len(d.recent) && d.isFiller(d.recent[from]) {
 		from++
 	}
 	return d.join(from, len(d.recent))
@@ -432,7 +461,7 @@ func (d *callsignDetector) join(from int, to int) (callsign.Callsign, bool) {
 		// A keyword and a filler word are no piece of a callsign. Without this rule the join takes
 		// the keyword of the next call with it: "cq o m 1 u m cq" gives the callsign OM1UMCQ, which
 		// stands beside the correct one and holds it back.
-		if leadingKeywords[word] || trailingKeywords[word] || fillerWords[word] {
+		if leadingKeywords[word] || trailingKeywords[word] || d.isFiller(word) {
 			return callsign.NoCallsign, false
 		}
 		joined.WriteString(word)

@@ -17,6 +17,7 @@ var hpsdrFlags = struct {
 	center     []int
 	sampleRate int
 	threshold  float64
+	contest    string
 }{}
 
 var hpsdrCmd = &cobra.Command{
@@ -37,6 +38,7 @@ func init() {
 	hpsdrCmd.Flags().IntSliceVar(&hpsdrFlags.center, "center", nil, "the center frequency of each receiver, in Hz, separated by a comma")
 	hpsdrCmd.Flags().IntVar(&hpsdrFlags.sampleRate, "sample-rate", 48000, "the sample rate of each receiver: 48000, 96000 or 192000")
 	hpsdrCmd.Flags().Float64Var(&hpsdrFlags.threshold, "threshold", pipeline.DefaultPeakThreshold, "the level above the noise floor that makes a peak, in dB")
+	hpsdrCmd.Flags().StringVar(&hpsdrFlags.contest, "contest", "", "the additional trigger word of a contest, for example cwt in \"cq cwt test dl1abc\"")
 
 	hpsdrCmd.MarkFlagRequired("center")
 }
@@ -47,6 +49,7 @@ func runHPSDR(ctx context.Context, scope core.ScopeService, channelService hpsdr
 		CenterFrequencies: hpsdrFlags.center,
 		SampleRate:        hpsdrFlags.sampleRate,
 		PeakThreshold:     hpsdrFlags.threshold,
+		Contest:           hpsdrFlags.contest,
 	}, scope, channelService, spotter, recorder)
 	if err != nil {
 		log.Fatal(err)

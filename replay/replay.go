@@ -31,6 +31,7 @@ type Options struct {
 	SampleRate      int
 	CenterFrequency float64
 	PeakThreshold   float64
+	Contest         string
 
 	// Realtime gives the chunks with the timing of the recording. Without it the replay runs as
 	// fast as the machine allows, which is what a test needs.
@@ -40,6 +41,7 @@ type Options struct {
 func config(options Options) pipeline.Config[float64] {
 	result := pipeline.DefaultConfig(options.SampleRate, options.CenterFrequency)
 	result.PeakThreshold = options.PeakThreshold
+	result.Contest = options.Contest
 	return result
 }
 

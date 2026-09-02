@@ -52,6 +52,7 @@ type Options struct {
 
 	SampleRate    int
 	PeakThreshold float64
+	Contest       string
 }
 
 // radio is the part of the device that this package uses. protocol1.Radio implements it, and a test
@@ -207,6 +208,7 @@ func (p *Process) keepAlive() {
 func (p *Process) addReceiver(index int, frequency int) error {
 	config := pipeline.DefaultConfig(p.options.SampleRate, frequency)
 	config.PeakThreshold = p.options.PeakThreshold
+	config.Contest = p.options.Contest
 
 	current := &receiver{index: index}
 	current.pipeline = pipeline.New[float32, int](config, multirx.ScopeOf(index, p.scope))

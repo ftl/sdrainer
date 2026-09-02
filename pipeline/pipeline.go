@@ -48,6 +48,11 @@ type Config[F dsp.Number] struct {
 
 	PeakThreshold float64 // dB above the local noise floor
 
+	// Contest is the additional word that the operators of one contest put into their call, for
+	// example "cwt" in "cq cwt test dl1abc". It is empty when no contest is running. See
+	// CallsignStage.contest.
+	Contest string
+
 	// The limits of the CW discrimination, section 4.3 of the research document.
 	MinDutyCycle       float64 // below this a candidate is noise
 	MaxDutyCycle       float64 // above this a candidate is a carrier, a beacon or a data mode
@@ -434,7 +439,7 @@ func New[S, F dsp.Number](config Config[F], scopeService core.ScopeService) *Pip
 		derived.DecodeHop,
 		result,
 	)
-	result.callsigns = NewCallsignStage[F](result)
+	result.callsigns = NewCallsignStage[F](result, config.Contest)
 	result.qualities = newSpotQualities[F]()
 	result.tracker = NewTrackerStage[S, F](TrackerConfig[F]{
 		FrameInterval:       derived.FrameInterval,

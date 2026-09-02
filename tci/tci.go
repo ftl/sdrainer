@@ -42,6 +42,7 @@ type Process struct {
 	allTRX bool
 
 	peakThreshold  float64
+	contest        string
 	scope          core.ScopeService
 	channelService ChannelService
 	spotter        Spotter
@@ -71,7 +72,7 @@ type receiver struct {
 	centerFrequency int
 }
 
-func New(host string, trx int, allTRX bool, peakThreshold float64, scope core.ScopeService, channelService ChannelService, spotter Spotter, recorder *iq.Writer, showSpots bool, traceTCI bool) (*Process, error) {
+func New(host string, trx int, allTRX bool, peakThreshold float64, contest string, scope core.ScopeService, channelService ChannelService, spotter Spotter, recorder *iq.Writer, showSpots bool, traceTCI bool) (*Process, error) {
 	tcpHost, err := cli.ParseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)
@@ -97,6 +98,7 @@ func New(host string, trx int, allTRX bool, peakThreshold float64, scope core.Sc
 		allTRX:         allTRX,
 		receivers:      make(map[int]*receiver),
 		peakThreshold:  peakThreshold,
+		contest:        contest,
 		scope:          scope,
 		channelService: channelService,
 		spotter:        spotter,
@@ -224,6 +226,7 @@ func (p *Process) firstTRX() int {
 func (p *Process) newPipeline(current *receiver) *pipeline.Pipeline[float32, int] {
 	config := pipeline.DefaultConfig(sampleRate, current.centerFrequency)
 	config.PeakThreshold = p.peakThreshold
+	config.Contest = p.contest
 
 	// only the first receiver writes to the scope, see the rules of the package multirx
 	scope := p.scope

@@ -26,10 +26,15 @@ func (c *callsignCollector) emitChannelRunningCallsignDetected(channel core.Chan
 }
 
 // runCallsignStage sends the given text through the stage, one character at a time, and gives the
-// callsigns that the stage reported.
-func runCallsignStage(text string) []callsign.Callsign {
+// callsigns that the stage reported. The optional second argument is the word of the contest.
+func runCallsignStage(text string, contest ...string) []callsign.Callsign {
+	var word string
+	if len(contest) > 0 {
+		word = contest[0]
+	}
+
 	collector := &callsignCollector{}
-	stage := NewCallsignStage[float64](collector)
+	stage := NewCallsignStage[float64](collector, word)
 	channel := core.Channel[float64]{ID: testCallsignChannel, Frequency: 7028000, WPM: 25, SNR: 18}
 	stage.ChannelCreated(channel)
 
@@ -158,7 +163,7 @@ func TestCallsignStageCorrectsAWrongCallsign(t *testing.T) {
 // channel. A later channel with the same ID must begin without the hits of the channel before it.
 func TestCallsignStageForgetsAChannelThatIsGone(t *testing.T) {
 	collector := &callsignCollector{}
-	stage := NewCallsignStage[float64](collector)
+	stage := NewCallsignStage[float64](collector, "")
 	channel := core.Channel[float64]{ID: testCallsignChannel, Frequency: 7028000}
 
 	stage.ChannelCreated(channel)
@@ -697,4 +702,51 @@ func TestParseCallsignTakesNoWordThatIsNoCallsign(t *testing.T) {
 
 		assert.Falsef(t, ok, "%q is no callsign", word)
 	}
+}
+
+// TestCallsignStageTakesTheWordOfAContest covers the word that the operators of one contest put into
+// their call. It holds the place between the keyword of the call and the callsign, and without it
+// the search stops there: the join of that word and the callsign is no callsign.
+func TestCallsignStageTakesTheWordOfAContest(t *testing.T) {
+	tt := []struct {
+		name    string
+		contest string
+		text    string
+	}{
+		{name: "cq and the word", contest: "yo", text: "cq yo a1bc cq yo a1bc "},
+		{name: "cq, the word and test", contest: "cwt", text: "cq cwt test a1bc cq cwt test a1bc "},
+		{name: "the word before test", contest: "cwt", text: "cq cwt test a1bc a1bc "},
+		{name: "beside a filler word", contest: "yo", text: "cq yo de a1bc cq yo de a1bc "},
+		{name: "in upper case", contest: "YO", text: "cq yo a1bc cq yo a1bc "},
+		{name: "with a space around it", contest: " yo ", text: "cq yo a1bc cq yo a1bc "},
+	}
+
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			detected := runCallsignStage(tc.text, tc.contest)
+
+			require.NotEmptyf(t, detected, "%q must give the callsign of the running station", tc.text)
+			assert.Equal(t, "A1BC", detected[len(detected)-1].String())
+		})
+	}
+}
+
+// TestCallsignStageWithoutTheWordOfAContest is the other side: the same text without the
+// configuration gives no callsign, because the word stands between the keyword and the callsign and
+// the stage does not know it.
+func TestCallsignStageWithoutTheWordOfAContest(t *testing.T) {
+	assert.Empty(t, runCallsignStage("cq yo a1bc cq yo a1bc "))
+}
+
+// TestCallsignStageTakesNoWordOfAContestAsACallsign holds that the word is a filler word and no
+// piece of a callsign: "cq cwt test" alone holds no station.
+func TestCallsignStageTakesNoWordOfAContestAsACallsign(t *testing.T) {
+	assert.Empty(t, runCallsignStage("cq cwt test cq cwt test ", "cwt"))
+}
+
+// TestCallsignStageNeedsACallBesideTheWordOfAContest holds that the word of a contest triggers
+// nothing by itself. Only "cq" and "test" make a call, so a word of a contest in the text of a QSO
+// says as little as a "de", see the comment of fillerWords.
+func TestCallsignStageNeedsACallBesideTheWordOfAContest(t *testing.T) {
+	assert.Empty(t, runCallsignStage("tnx yo a1bc tnx yo a1bc ", "yo"))
 }

@@ -94,19 +94,25 @@ sdrainer <command> [flags]
 of the receiver), `--all-trx` (one pipeline for each receiver of the device, and
 `--trx` then has no effect), `--threshold` (the level above the noise floor that
 makes a peak, in dB, default 10), `--show-spots` (put each callsign on the
-panorama of the TCI device), `--trace-tci` (hidden).
+panorama of the TCI device), `--trace-tci` (hidden), `--contest`.
 
 **The flags of `kiwi`:** `--host` (default `localhost:8073`), `--username`,
-`--password`, `--center` (the center frequency), `--threshold`.
+`--password`, `--center` (the center frequency), `--threshold`, `--contest`.
 
 **The flags of `hpsdr`:** `--host` (the address of the device, empty looks for
 one on the local network), `--center` (one frequency for each receiver, separated
-by a comma), `--sample-rate` (48000, 96000 or 192000), `--threshold`.
+by a comma), `--sample-rate` (48000, 96000 or 192000), `--threshold`, `--contest`.
 
 **The flags of `demo`:** `--center`, `--noise`.
 
 **The flags of `replay`:** `--iq-filename`, `--iq-sample-rate` (default 12000),
-`--center` (0 gives each frequency as an offset), `--threshold`, `--realtime`.
+`--center` (0 gives each frequency as an offset), `--threshold`, `--realtime`,
+`--contest`.
+
+**`--contest` holds for each of the four sources that decode a band.** It takes the
+additional word that the operators of one contest put into their call, for example
+`--contest=cwt` for the CWops Mini-CWT and `--contest=yo` for the YO HF DX
+contest. Section 6.5 says what the callsign stage makes of it.
 
 **The flags of `listen`:** `--iq-filename`, `--iq-sample-rate`,
 `--signal-offset` (the offset of the signal from the center, in Hz),
@@ -857,6 +863,29 @@ its callsign beside one of the words of a call:
 | keyword, before the callsign | `cq`, `test`, `qrl`, `qrl?`, `tu` | `cq a1bc` |
 | keyword, after the callsign | `test` | `a1bc test` |
 | filler, between the two | `de`, `dx` | `cq dx de a1bc` |
+
+**A contest gives each call a word of its own**, and `--contest` holds it. "cq cwt
+test dl1abc" and "cq yo dl1abc" are the calls of two contests, and the word stands
+exactly where a filler word stands: between the keyword of the call and the
+callsign. The stage therefore takes it as one more filler word, and it steps over
+it like over "de" and "dx".
+
+Without it the search stops at that word: the join of `yo` and `dl1abc` is no
+callsign, and the pattern of a keyword on each side of the callsign never closes,
+so a station that calls that way gives no spot at all.
+
+**The word triggers nothing by itself.** Only `cq` and `test` make a call, see
+`callKeywords`, so a `yo` in the text of a QSO says as little as a `de`.
+
+A measurement over the two recordings of the YO HF DX contest with `--contest=yo`:
+
+| The recording | Callsigns without the word | With it |
+|---|---|---|
+| `test_yo-hf-dx_1_48k.iq` | 8 | 10, and HA4ZS and SP3VT are new |
+| `test_yo-hf-dx_3_48k.iq` | 0 to 1 | 2 to 3, and AA2A and EA1WH are new |
+
+The transcriptions of those four hold exactly the pattern: "cq yo test ha4zs",
+"cq yo sp3vt", "test yo aa2a" and "yo test ea1wh".
 
 **A filler word counts nothing by itself.** It only holds the place between the
 keyword and the callsign, and the search steps over it. The join of the pieces of
