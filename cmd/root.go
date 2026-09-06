@@ -48,7 +48,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 }
 
@@ -91,17 +91,17 @@ func runPipeline[F dsp.Number](f func(context.Context, core.ScopeService, core.C
 
 		grpcServer, scopeService, channelService, err := setupService[F]()
 		if err != nil {
-			log.Fatal(err)
+			fatalTermination(err)
 		}
 
 		clusterServer, spotter, err := setupCluster[F](formattedVersion)
 		if err != nil {
-			log.Fatal(err)
+			fatalTermination(err)
 		}
 
 		recorder, err := setupRecorder()
 		if err != nil {
-			log.Fatal(err)
+			fatalTermination(err)
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -195,9 +195,14 @@ func handleCancelation(signals <-chan os.Signal, cancel context.CancelFunc) {
 		if count == 1 {
 			cancel()
 		} else {
-			log.Fatal("hard shutdown")
+			fatalTermination("hard shutdown")
 		}
 	}
+}
+
+func fatalTermination(cause any) {
+	fmt.Fprintln(os.Stderr, cause)
+	os.Exit(2)
 }
 
 type nopWriter struct{}

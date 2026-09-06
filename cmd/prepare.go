@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"log"
-
 	"github.com/spf13/cobra"
 
 	"github.com/ftl/sdrainer/prepare"
@@ -39,6 +37,6 @@ func runPrepare(cmd *cobra.Command, args []string) {
 		SampleRate: prepareFlags.iqSampleRate,
 	})
 	if err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 }

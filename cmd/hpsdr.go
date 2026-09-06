@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 
 	"github.com/spf13/cobra"
 
@@ -22,7 +21,7 @@ var hpsdrFlags = struct {
 
 var hpsdrCmd = &cobra.Command{
 	Use:   "hpsdr",
-	Short: "EXPERIMENTAL: detect and decode CW signals from an openHPSDR device",
+	Short: "detect and decode CW signals from an openHPSDR device",
 	Long: "Detect and decode CW signals from a device that speaks the openHPSDR protocol 1, for\n" +
 		"example a Hermes-Lite 2 or an original openHPSDR device.\n\n" +
 		"--center names one frequency for each receiver of the device. With more than one frequency\n" +
@@ -52,7 +51,7 @@ func runHPSDR(ctx context.Context, scope core.ScopeService, channelService hpsdr
 		Contest:           hpsdrFlags.contest,
 	}, scope, channelService, spotter, recorder)
 	if err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 
 	<-ctx.Done()

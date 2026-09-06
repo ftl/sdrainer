@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 
 	"github.com/spf13/cobra"
 
@@ -49,7 +48,7 @@ func runTCI(ctx context.Context, scope core.ScopeService, channelService tci.Cha
 	process, err := tci.New(tciFlags.host, tciFlags.trx, tciFlags.allTRX, tciFlags.threshold, tciFlags.contest,
 		scope, channelService, spotter, recorder, tciFlags.showSpots, tciFlags.traceTCI)
 	if err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 
 	<-ctx.Done()

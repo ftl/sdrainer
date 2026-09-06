@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 
 	"github.com/spf13/cobra"
 
@@ -32,7 +31,7 @@ func init() {
 func runDemo(ctx context.Context, scope core.ScopeService, channelService demo.ChannelService, spotter demo.Spotter, recorder *iq.Writer, cmd *cobra.Command, args []string) {
 	process, err := demo.New(demoFlags.centerFrequency, demoFlags.noise, demo.DefaultSignals(demoFlags.centerFrequency), scope, channelService, spotter, recorder, rootFlags.debug)
 	if err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 
 	<-ctx.Done()

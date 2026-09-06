@@ -2,7 +2,6 @@ package kiwi
 
 import (
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/ftl/sdrainer/core"
@@ -99,7 +98,7 @@ func (p *Process) Close() {
 // this method one time, before the first call of IQData.
 func (p *Process) Connected(sampleRate int) {
 	if sampleRate == 0 {
-		log.Fatal("no audio rate!")
+		panic("no audio rate!")
 	}
 
 	p.mutex.Lock()

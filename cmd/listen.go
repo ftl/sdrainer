@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"log"
-
 	"github.com/ftl/sdrainer/listen"
 	"github.com/spf13/cobra"
 )
@@ -45,6 +43,6 @@ func runListen(cmd *cobra.Command, args []string) {
 		Pitch:        listenFlags.pitch,
 	})
 	if err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 }

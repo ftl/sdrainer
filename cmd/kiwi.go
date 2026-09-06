@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 
 	"github.com/ftl/sdrainer/core"
 	"github.com/ftl/sdrainer/iq"
@@ -42,7 +41,7 @@ func runKiwi(ctx context.Context, scope core.ScopeService, channelService kiwi.C
 		kiwiFlags.centerFrequency, kiwiFlags.threshold, kiwiFlags.contest,
 		scope, channelService, spotter, recorder)
 	if err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 
 	<-ctx.Done()

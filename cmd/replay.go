@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 
 	"github.com/ftl/sdrainer/core"
 	"github.com/ftl/sdrainer/iq"
@@ -49,6 +48,6 @@ func runReplay(ctx context.Context, scope core.ScopeService, channelService repl
 		Realtime:        replayFlags.realtime,
 	}, scope, channelService, spotter, recorder)
 	if err != nil {
-		log.Fatal(err)
+		fatalTermination(err)
 	}
 }

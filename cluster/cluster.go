@@ -78,7 +78,7 @@ func NewServer[F dsp.Number](address string, mycall string, version string) (*Se
 
 	localAddress, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	result.address = localAddress
 
@@ -127,7 +127,7 @@ func (s *Server[_]) run() {
 		default:
 			err := s.listener.SetDeadline(time.Now().Add(newConnectionDeadline))
 			if err != nil {
-				log.Fatalf("setting the listener deadline failed: %v", err)
+				panic(fmt.Errorf("setting the listener deadline failed: %w", err))
 			}
 			conn, err := s.listener.AcceptTCP()
 			if errors.Is(err, os.ErrDeadlineExceeded) {
