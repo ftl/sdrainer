@@ -79,7 +79,8 @@ func runPipeline[F dsp.Number](f func(context.Context, core.ScopeService, core.C
 			log.SetOutput(&nopWriter{})
 		}
 
-		log.Printf("SDRainer Version %s", formatVersion())
+		formattedVersion := formatVersion()
+		log.Printf("SDRainer Version %s", formattedVersion)
 
 		if rootFlags.pprof {
 			go func() {
@@ -88,40 +89,19 @@ func runPipeline[F dsp.Number](f func(context.Context, core.ScopeService, core.C
 			}()
 		}
 
-		var grpcServer *scope.ScopeServer[F]
-		var scopeService core.ScopeService = &core.NullScopeService{}
-		var channelService core.ChannelService[F] = &core.NullChannelService[F]{}
-		if rootFlags.service {
-			grpcServer = scope.NewScopeServer[F](rootFlags.serviceAddress)
-			err = grpcServer.Start()
-			if err != nil {
-				log.Fatalf("cannot start gRPC server: %v", err)
-			}
-			if rootFlags.scope {
-				scopeService = grpcServer
-			}
-			channelService = grpcServer
+		grpcServer, scopeService, channelService, err := setupService[F]()
+		if err != nil {
+			log.Fatal(err)
 		}
 
-		var clusterServer *cluster.Server[F]
-		var spotter core.Spotter[F]
-		spotter = &core.NullSpotter[F]{}
-		if rootFlags.cluster {
-			clusterServer, err = cluster.NewServer[F](rootFlags.clusterAddress, rootFlags.clusterCall, formatVersion())
-			if err != nil {
-				log.Fatalf("cannot start DX cluster server: %v", err)
-			}
-			clusterServer.SetSilencePeriod(rootFlags.spotSilencePeriod)
-			spotter = clusterServer
+		clusterServer, spotter, err := setupCluster[F](formattedVersion)
+		if err != nil {
+			log.Fatal(err)
 		}
 
-		var recorder *iq.Writer
-		if rootFlags.record != "" {
-			recorder, err = iq.NewWriter(rootFlags.record)
-			if err != nil {
-				log.Fatalf("cannot record the IQ stream: %v", err)
-			}
-			log.Printf("recording the IQ stream into %s", recorder.Name())
+		recorder, err := setupRecorder()
+		if err != nil {
+			log.Fatal(err)
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -145,6 +125,60 @@ func runPipeline[F dsp.Number](f func(context.Context, core.ScopeService, core.C
 			grpcServer.Stop()
 		}
 	}
+}
+
+func setupService[F dsp.Number]() (grpcServer *scope.ScopeServer[F], scopeService core.ScopeService, channelService core.ChannelService[F], err error) {
+	scopeService = &core.NullScopeService{}
+	channelService = &core.NullChannelService[F]{}
+	if !rootFlags.service {
+		return
+	}
+
+	grpcServer = scope.NewScopeServer[F](rootFlags.serviceAddress)
+	err = grpcServer.Start()
+	if err != nil {
+		err = fmt.Errorf("cannot start gRPC server: %w", err)
+		return
+	}
+
+	if rootFlags.scope {
+		scopeService = grpcServer
+	}
+	channelService = grpcServer
+
+	return
+}
+
+func setupCluster[F dsp.Number](version string) (clusterServer *cluster.Server[F], spotter core.Spotter[F], err error) {
+	spotter = &core.NullSpotter[F]{}
+	if !rootFlags.cluster {
+		return
+	}
+
+	clusterServer, err = cluster.NewServer[F](rootFlags.clusterAddress, rootFlags.clusterCall, version)
+	if err != nil {
+		err = fmt.Errorf("cannot start DX cluster server: %w", err)
+		return
+	}
+
+	clusterServer.SetSilencePeriod(rootFlags.spotSilencePeriod)
+	spotter = clusterServer
+
+	return
+}
+
+func setupRecorder() (*iq.Writer, error) {
+	if rootFlags.record == "" {
+		return nil, nil
+	}
+
+	recorder, err := iq.NewWriter(rootFlags.record)
+	if err != nil {
+		return nil, fmt.Errorf("cannot record the IQ stream: %w", err)
+	}
+	log.Printf("recording the IQ stream into %s", recorder.Name())
+
+	return recorder, nil
 }
 
 func formatVersion() string {
