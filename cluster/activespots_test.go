@@ -131,11 +131,12 @@ func TestConnectionSendsTheActiveSpotsAfterTheLogin(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, welcome, "SDRainer Version test")
 
-	prompt, err := readUntil(reader, "Enter your callsign: ")
+	prompt, err := readUntil(reader, "login: ")
 	require.NoError(t, err)
-	assert.Contains(t, prompt, "Enter your callsign: ")
+	assert.Contains(t, prompt, "login: ")
 
-	_, err = fmt.Fprint(client, "dl1xyz\n")
+	// a telnet client ends its line with CR LF
+	_, err = fmt.Fprint(client, "dl1xyz\r\n")
 	require.NoError(t, err)
 
 	// the welcome of the user and one line for each station that has a channel

@@ -17,6 +17,9 @@ import (
 	"github.com/ftl/sdrainer/dsp"
 )
 
+// crlf is convention in telnet for line endings.
+const crlf = "\r\n"
+
 const (
 	newConnectionDeadline     = 100 * time.Millisecond
 	connectionKeepAlivePeriod = 30 * time.Second
@@ -95,7 +98,7 @@ func NewServer[F dsp.Number](address string, mycall string, version string) (*Se
 
 func (s *Server[_]) run() {
 	defer close(s.closed)
-	welcome := fmt.Sprintf("SDRainer Version %s\n", s.version)
+	welcome := fmt.Sprintf("SDRainer Version %s%s", s.version, crlf)
 
 	removeConnections := make([]int, 0, 10)
 	for {
@@ -251,7 +254,7 @@ func (s *Server[_]) registerSpot(hash spotHash, timestamp time.Time) {
 
 func (s *Server[F]) formatSpotMessage(callsign string, frequency F, msg string, timestamp time.Time) string {
 	prefix := fmt.Sprintf("DX de %s:", s.mycall)
-	return fmt.Sprintf("%-16s %7.1f  %-13s%-31s%-4sz\n", prefix, float64(frequency)/1000.0, callsign, msg, timestamp.UTC().Format("1504"))
+	return fmt.Sprintf("%-16s %7.1f  %-13s%-31s%-4sz%s", prefix, float64(frequency)/1000.0, callsign, msg, timestamp.UTC().Format("1504"), crlf)
 }
 
 var ErrClosed = errors.New("connection already closed")
@@ -273,6 +276,10 @@ type Connection struct {
 
 	currentPrompt *Prompt
 	currentAnswer string
+
+	// lastByteWasCR holds that the byte before this one was a CR, so that the LF of a CR LF does
+	// not end a second line. See parseAnswerByte.
+	lastByteWasCR bool
 
 	close  chan struct{}
 	closed chan struct{}
@@ -314,15 +321,24 @@ func (c *Connection) run() {
 		Question: "",
 	}
 	ignoreInputPrompt.Answer = func(string) (string, *Prompt) {
-		return "\n", ignoreInputPrompt
+		return crlf, ignoreInputPrompt
 	}
+	// **"login: " is the prompt of DXSpider, and a client looks for exactly that text.** The prompt
+	// said "Enter your callsign: " before, and openhamclock never answered it: it looks for the
+	// three strings "login:", "Please enter your call" and "enter your callsign" with a comparison
+	// that respects the case, and the capital "E" of the old prompt matched none of them. See
+	// section 9.1 of doc/architecture.md.
+	//
+	// **"Please enter your callsign" would be worse than the old text.** openhamclock also holds a
+	// list of the phrases that a node sends when it *refuses* a login, and that list holds
+	// "please enter.*call". A prompt of that shape makes the client take the login as rejected.
 	inputCallsignPrompt := &Prompt{
-		Question: "Enter your callsign: ",
+		Question: "login: ",
 		Answer: func(answer string) (string, *Prompt) {
 			c.user = answer
 
 			var response strings.Builder
-			fmt.Fprintf(&response, "welcome %s\n", c.user)
+			fmt.Fprintf(&response, "welcome %s%s", c.user, crlf)
 			if c.onLogin != nil {
 				for _, line := range c.onLogin() {
 					response.WriteString(line)
@@ -414,9 +430,24 @@ func (c *Connection) startPrompt(prompt *Prompt) error {
 	return c.writeAll([]byte(prompt.Question))
 }
 
+// parseAnswerByte takes one byte of the answer of a client and gives the response when that answer
+// is complete.
+//
+// **CR LF ends one line and not two.** A client that follows the telnet convention sends CR LF, and
+// each of the two bytes ended the answer before: the first one gave the response, and the second one
+// gave a further response to an empty answer. A client then read one line more than the server
+// meant to send.
+//
+// A client that ends its lines with LF alone, or with CR alone, still works: only the LF that
+// follows a CR goes away.
 func (c *Connection) parseAnswerByte(answerByte byte) (string, *Prompt) {
-	switch answerByte {
-	case '\n', '\r':
+	previousByteWasCR := c.lastByteWasCR
+	c.lastByteWasCR = answerByte == '\r'
+
+	switch {
+	case answerByte == '\n' && previousByteWasCR:
+		return "", nil
+	case answerByte == '\n' || answerByte == '\r':
 		response, nextPrompt := c.currentPrompt.Answer(c.currentAnswer)
 		c.currentAnswer = ""
 		return response, nextPrompt

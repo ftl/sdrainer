@@ -1668,6 +1668,37 @@ and a comment of the form `CW 25 WPM 18 dB`.
 **A callsign gives a spot again only after a silence period.** One station on
 one frequency would otherwise fill the list of a logging program.
 
+#### The line that a client expects
+
+**The prompt is `login: `, because a client looks for that text literally.** It
+said `Enter your callsign: ` before, and a measurement with openhamclock shows
+what that cost: the client looks for the three strings `login:`,
+`Please enter your call` and `enter your callsign`, and it compares them with
+respect to the case. The capital `E` of the old prompt matched none of them, so
+openhamclock never answered the prompt, and the connection stayed without a
+callsign until it ran into a timeout.
+
+`clusterix`, which hellocontest uses, takes the text in lower case and asks for
+the suffix `callsign:`, `call:` or `login:`. Both the old and the new prompt hold
+for it.
+
+> **`Please enter your callsign: ` would be worse than the old text.**
+> openhamclock also holds a list of the phrases that a node sends when it
+> **refuses** a login, and that list holds `please enter.*call`. A prompt of that
+> shape makes the client take the login as rejected and park the connection.
+
+**Each line ends with CR LF.** That is the convention of telnet, and a DX cluster
+speaks telnet. A client that splits the stream on LF alone reads the CR as a part
+of the text, and a client that asks for CR LF reads nothing at all from a server
+that sends LF alone.
+
+**CR LF ends one line and not two.** `parseAnswerByte` took each of the two bytes
+as an end before, so a client that follows the convention got two responses: the
+first byte gave the welcome and the spots, and the second gave a further response
+to an empty answer. A client then read one blank line that the server did not
+mean to send. A client that ends its lines with LF alone, or with CR alone, still
+works.
+
 **A spot holds a quality tag.** The comment follows the form of a skimmer of
 AR-Cluster 6, and the tag stands at its right end:
 
