@@ -180,7 +180,7 @@ const (
 	defaultMaxAutocorrelation = 0.4
 
 	defaultNoiseFloorTime = 3 * time.Second  // section 4.1 asks for 1 s to 5 s
-	defaultDeadTimeout    = 20 * time.Second // section 5 asks for 10 s to 30 s
+	defaultDeadTimeout    = 10 * time.Second // section 5 asks for 10 s to 30 s
 	defaultMaxDrift       = 2.0              // Hz for each second
 )
 
