@@ -38,6 +38,7 @@ var rootFlags = struct {
 	clusterAddress    string
 	clusterCall       string
 	spotSilencePeriod time.Duration
+	ignore            []string
 	record            string
 }{}
 
@@ -57,6 +58,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&rootFlags.clusterAddress, "cluster-address", ":7373", "the binding address and port for the DX cluster")
 	rootCmd.PersistentFlags().StringVar(&rootFlags.clusterCall, "cluster-call", "local-#", "the reporter's callsign of the cluster spots")
 	rootCmd.PersistentFlags().DurationVar(&rootFlags.spotSilencePeriod, "spot-every", 1*time.Minute, "the time period after an active callsign is spotted again")
+	rootCmd.PersistentFlags().StringSliceVar(&rootFlags.ignore, "ignore", nil, "the callsigns that are not reported as spot or as channel, separated by a comma")
 
 	rootCmd.PersistentFlags().BoolVar(&rootFlags.service, "service", false, "enable the gRPC server")
 	rootCmd.PersistentFlags().StringVar(&rootFlags.serviceAddress, "service-address", ":35369", "binding address and port for the gRPC server")
@@ -89,12 +91,14 @@ func runPipeline[F dsp.Number](f func(context.Context, core.ScopeService, core.C
 			}()
 		}
 
-		grpcServer, scopeService, channelService, err := setupService[F]()
+		ignored := ignoreList()
+
+		grpcServer, scopeService, channelService, err := setupService[F](ignored)
 		if err != nil {
 			fatalTermination(err)
 		}
 
-		clusterServer, spotter, err := setupCluster[F](formattedVersion)
+		clusterServer, spotter, err := setupCluster[F](formattedVersion, ignored)
 		if err != nil {
 			fatalTermination(err)
 		}
@@ -127,7 +131,15 @@ func runPipeline[F dsp.Number](f func(context.Context, core.ScopeService, core.C
 	}
 }
 
-func setupService[F dsp.Number]() (grpcServer *scope.ScopeServer[F], scopeService core.ScopeService, channelService core.ChannelService[F], err error) {
+func ignoreList() core.IgnoreList {
+	result, err := core.ParseIgnoreList(rootFlags.ignore)
+	if err != nil {
+		fatalTermination(err)
+	}
+	return result
+}
+
+func setupService[F dsp.Number](ignored core.IgnoreList) (grpcServer *scope.ScopeServer[F], scopeService core.ScopeService, channelService core.ChannelService[F], err error) {
 	scopeService = &core.NullScopeService{}
 	channelService = &core.NullChannelService[F]{}
 	if !rootFlags.service {
@@ -144,12 +156,12 @@ func setupService[F dsp.Number]() (grpcServer *scope.ScopeServer[F], scopeServic
 	if rootFlags.scope {
 		scopeService = grpcServer
 	}
-	channelService = grpcServer
+	channelService = core.IgnoringChannelService[F](ignored, grpcServer)
 
 	return
 }
 
-func setupCluster[F dsp.Number](version string) (clusterServer *cluster.Server[F], spotter core.Spotter[F], err error) {
+func setupCluster[F dsp.Number](version string, ignored core.IgnoreList) (clusterServer *cluster.Server[F], spotter core.Spotter[F], err error) {
 	spotter = &core.NullSpotter[F]{}
 	if !rootFlags.cluster {
 		return
@@ -162,7 +174,7 @@ func setupCluster[F dsp.Number](version string) (clusterServer *cluster.Server[F
 	}
 
 	clusterServer.SetSilencePeriod(rootFlags.spotSilencePeriod)
-	spotter = clusterServer
+	spotter = core.IgnoringSpotter[F](ignored, clusterServer)
 
 	return
 }

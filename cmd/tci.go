@@ -46,7 +46,7 @@ func init() {
 
 func runTCI(ctx context.Context, scope core.ScopeService, channelService tci.ChannelService, spotter tci.Spotter, recorder *iq.Writer, cmd *cobra.Command, args []string) {
 	process, err := tci.New(tciFlags.host, tciFlags.trx, tciFlags.allTRX, tciFlags.threshold, tciFlags.contest,
-		scope, channelService, spotter, recorder, tciFlags.showSpots, tciFlags.traceTCI)
+		scope, channelService, spotter, recorder, tciFlags.showSpots, ignoreList(), tciFlags.traceTCI)
 	if err != nil {
 		fatalTermination(err)
 	}

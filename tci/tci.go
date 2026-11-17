@@ -48,6 +48,7 @@ type Process struct {
 	spotter        Spotter
 	recorder       *iq.Writer
 	showSpots      bool
+	ignored        core.IgnoreList
 
 	// The TCI device gives the center frequency with SetDDS, and that can happen before and after
 	// the connection. The pipeline begins with the connection, and it takes each later value with
@@ -72,7 +73,7 @@ type receiver struct {
 	centerFrequency int
 }
 
-func New(host string, trx int, allTRX bool, peakThreshold float64, contest string, scope core.ScopeService, channelService ChannelService, spotter Spotter, recorder *iq.Writer, showSpots bool, traceTCI bool) (*Process, error) {
+func New(host string, trx int, allTRX bool, peakThreshold float64, contest string, scope core.ScopeService, channelService ChannelService, spotter Spotter, recorder *iq.Writer, showSpots bool, ignored core.IgnoreList, traceTCI bool) (*Process, error) {
 	tcpHost, err := cli.ParseTCPAddrArg(host, defaultHostname, defaultPort)
 	if err != nil {
 		return nil, fmt.Errorf("invalid TCI host: %v", err)
@@ -104,6 +105,7 @@ func New(host string, trx int, allTRX bool, peakThreshold float64, contest strin
 		spotter:        spotter,
 		recorder:       recorder,
 		showSpots:      showSpots,
+		ignored:        ignored,
 		callsigns:      make(map[core.ChannelID]string),
 		opAsync:        make(chan func(), 100),
 		close:          make(chan struct{}),
@@ -252,7 +254,7 @@ func (p *Process) newPipeline(current *receiver) *pipeline.Pipeline[float32, int
 // With more than one receiver the id of a channel carries the number of that receiver, see the
 // rules of the package multirx.
 func (p *Process) channelServiceOf(trx int) ChannelService {
-	result := multirx.FanOut[int](p.channelService, p)
+	result := multirx.FanOut[int](p.channelService, core.IgnoringChannelService[int](p.ignored, p))
 	if !p.allTRX {
 		return result
 	}
